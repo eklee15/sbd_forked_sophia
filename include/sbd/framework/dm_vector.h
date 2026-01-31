@@ -149,6 +149,51 @@ namespace sbd {
   }
 
   template <typename ElemT>
+  void Randomize(std::vector<ElemT> & X,
+		 MPI_Comm b_comm) {
+    using RealT = typename GetRealType<ElemT>::RealT;
+    int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
+    int nth = omp_get_max_threads();
+    RealT array[SBD_MAX_THREADS];
+    RealT sum=0.0;
+// use Kahan summation for each thread and add the private sums in deterministic order
+    #pragma omp parallel
+    {
+      unsigned int seed = static_cast<unsigned int>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+      std::mt19937 gen(seed);
+      std::uniform_real_distribution<RealT> dist(-1,1);
+      int tid = omp_get_thread_num();
+      RealT mysum = 0.0;
+      RealT eps   = 0.0;
+      RealT val, tmp;
+      #pragma omp for schedule(static)
+      for(size_t is=0; is < X.size(); is++) {
+	apply_dist(X[is],gen);
+        val = GetReal( Conjugate(X[is]) * X[is] ) - eps;
+        tmp = mysum + val;
+        eps = (tmp - mysum) - val;
+        mysum = tmp;
+      }
+      array[tid] = mysum;
+    }
+    for (int i = 0; i < nth; i++) sum += array[i];
+
+    RealT res;
+    MPI_Datatype DataT = GetMpiType<RealT>::MpiT;
+    if( mpi_size_b != 1 ) {
+      MPI_Allreduce(&sum,&res,1,DataT,MPI_SUM,b_comm);
+    } else {
+      res = sum;
+    }
+    res = std::sqrt(res);
+    ElemT factor = ElemT(1.0/res);
+#pragma omp parallel for
+    for(size_t is=0; is < X.size(); is++) {
+      X[is] *= factor;
+    }
+  }
+  
+  template <typename ElemT>
   void Swap(ElemT a, std::vector<ElemT> & X,
 	    ElemT b, std::vector<ElemT> & Y) {
 #pragma omp parallel

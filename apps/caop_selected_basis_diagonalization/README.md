@@ -41,6 +41,8 @@ Below is an explanation of each command-line option.
   Number of restart cycles in the Davidson algorithm.
 - `--block` (int):  
   Maximum dimension of the reduced space when constructing the projected Hamiltonian in the Davidson algorithm.
+- `--numivec` (int):  
+  Number of initial vectors (initial subspace dimension) for the Davidson method. This option controls how many basis vectors are used to form the initial Krylov subspace. When restarting, the lowest-energy eigenstates obtained from the previous reduced subspace diagonalization are reused as initial vectors, up to the number specified by this option.
 - `--tolerance` (float):  
   Convergence threshold for the Davidson algorithm. The iteration terminates once the norm of the residual vector falls below this value.
 - `--system_size` (int):  

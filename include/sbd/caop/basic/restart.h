@@ -135,11 +135,14 @@ namespace sbd {
 	    send_w[k] = load_w[index_not_found[k]];
 	  }
 	}
+	ElemT normw;
+	Normalize(w,normw,b_comm);
       }
       MpiBcast(w,0,t_comm);
     }
     MpiBcast(w,0,h_comm);
   }
+  
   
 }
 

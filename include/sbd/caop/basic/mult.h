@@ -106,7 +106,11 @@ namespace sbd {
 	    if( check ) continue;
 
 	    // we assume that tbs is aligned in ascending order
-	    auto itik = std::lower_bound(tbs.begin(),tbs.end(),vk);
+	    auto itik = std::lower_bound(tbs.begin(),tbs.end(),vk,
+					 [](const std::vector<size_t> & x,
+					    const std::vector<size_t> & y) {
+					   return x < y;
+					 });
 	    if( itik == tbs.end() ) continue;
 	    if( *itik == vk ) {
 	      auto ik = static_cast<size_t>(itik - tbs.begin());

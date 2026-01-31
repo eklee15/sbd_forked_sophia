@@ -18,6 +18,7 @@ namespace sbd {
       int method = 0;
       int max_it = 1;
       int max_nb = 10;
+      int max_iv = 1;
       double eps = 1.0e-4;
       int init = 0;
 
@@ -46,6 +47,9 @@ namespace sbd {
 	}
 	if( std::string(argv[i]) == "--block" ) {
 	  sbd_data.max_nb = std::atoi(argv[++i]);
+	}
+	if( std::string(argv[i]) == "--numivec" ) {
+	  sbd_data.max_iv = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--tolerance" ) {
 	  sbd_data.eps = std::atof(argv[++i]);
@@ -94,6 +98,7 @@ namespace sbd {
       }
       std::cout << "# max_it: " << sbd_data.max_it << std::endl;
       std::cout << "# block size: " << sbd_data.max_nb << std::endl;
+      std::cout << "# number of  initiial vectors: " << sbd_data.max_iv << std::endl;
       std::cout << "# tolerance: " << sbd_data.eps << std::endl;
       std::cout << "# init method: " << sbd_data.init << std::endl;
       std::cout << "# system size: " << sbd_data.system_size << std::endl;
@@ -123,6 +128,7 @@ namespace sbd {
       int method = sbd_data.method;
       int max_it = sbd_data.max_it;
       int max_nb = sbd_data.max_nb;
+      int max_iv = sbd_data.max_iv;
       int init   = sbd_data.init;
       double eps = sbd_data.eps;
       size_t system_size = sbd_data.system_size;
@@ -174,7 +180,7 @@ namespace sbd {
 	if( method == 0 ) {
 	  Davidson(hii,W,basis,bit_length,slide,H,sign,
 		   h_comm,b_comm,t_comm,
-		   max_it,max_nb,eps);
+		   max_it,max_nb,max_iv,eps);
 	} else if ( method == 2 ) {
 	  Lanczos(hii,W,basis,bit_length,slide,H,sign,
 		  h_comm,b_comm,t_comm,
@@ -238,7 +244,7 @@ namespace sbd {
 	if( method == 1 ) {
 	  Davidson(hii,ib,ik,hij,W,slide,
 		   h_comm,b_comm,t_comm,
-		   max_it,max_nb,eps);
+		   max_it,max_nb,max_iv,eps);
 	} else if ( method == 3 ) {
 	  Lanczos(hii,ib,ik,hij,W,slide,
 		  h_comm,b_comm,t_comm,
@@ -386,6 +392,7 @@ namespace sbd {
 	  load_basis_from_files(basisfiles,basis,
 				bit_length,system_size,
 				b_comm);
+	  sort_bitarray(basis);
 	  if( sbd_data.do_sort_basis ) {
 	    redistribution(basis,bit_length,system_size,b_comm);
 	    reordering(basis,bit_length,system_size,b_comm);

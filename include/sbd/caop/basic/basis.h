@@ -251,6 +251,7 @@ namespace sbd {
 	throw std::runtime_error("Failed to read basis data from: " + filename);
       }
     }
+    sort_bitarray(config);
   }
 
   inline void mpi_bcast_string_vector(std::vector<std::string> & vec,
