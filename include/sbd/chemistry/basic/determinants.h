@@ -356,11 +356,11 @@ namespace sbd {
     for (size_t i = 0; i < norb; ++i) {
       bool occ = getocc(det, bit_length, 2 * i + 1);
       if (occ) {
-	setocc(bdet, bit_length, i, true); 
+	setocc(bdet, bit_length, i, true);
       }
     }
   }
-  
+
 
   int difference(const std::vector<size_t> & a,
 		 const std::vector<size_t> & b,
@@ -454,24 +454,6 @@ namespace sbd {
             }
         }
         return energy + I0;
-
-/*    ElemT energy(0.0);
-    size_t one = 1;
-    std::vector<int> closed;
-    int num_closed = getClosed(det,bit_length,2*L,closed);
-
-    for(int i=0; i < num_closed; i++) {
-      int I = closed.at(i);
-      energy += I1.Value(I,I);
-      for(int j=i+1; j < num_closed; j++) {
-	int J = closed.at(j);
-	energy += I2.DirectValue(I/2,J/2);
-	if( (I%2) == (J%2) ) {
-	  energy -= I2.ExchangeValue(I/2,J/2);
-	}
-      }
-    }
-    return energy+I0;*/
   }
 
   template <typename ElemT>
@@ -496,22 +478,6 @@ namespace sbd {
         }
         energy *= ElemT(sgn);
         return energy;
-
-  /*double sgn = 1.0;
-    parity(det,bit_length,std::min(i,a),std::max(i,a),sgn);
-    ElemT energy = I1.Value(a,i);
-    size_t one = 1;
-    for(int x=0; x < det.size(); x++) {
-      size_t bits = det[x];
-      while(bits != 0) {
-	int pos = __builtin_ffsl(bits);
-	int j = x * bit_length + pos-1;
-	energy += (I2.Value(a,i,j,j) - I2.Value(a,j,j,i));
-	bits &= ~(one << (pos-1));
-      }
-    }
-    energy *= ElemT(sgn);
-    return energy;*/
   }
 
   template <typename ElemT>

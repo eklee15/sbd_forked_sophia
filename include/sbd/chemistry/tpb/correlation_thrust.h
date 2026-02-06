@@ -133,75 +133,6 @@ public:
             atomicAdd(twobody + (sj + 2 * si) * twobody_size + (ob + this->norbs * oa + this->norbs * this->norbs * (oi + this->norbs * oj)), ElemT(-sgn) * Conjugate(WeightI) * WeightJ);
         }
     }
-
-    /**
-        Function for adding the terms to the resulting correlation
-    */
-    __device__ __host__ void CorrelationTermAddition(TaskHelpersThrust<ElemT>& helper, size_t ia, size_t ib, size_t ja, size_t jb)
-    {
-        int c[2];
-        int d[2];
-        size_t nc = 0;
-        size_t nd = 0;
-
-        size_t full_words = (2 * this->norbs) / this->bit_length;
-        size_t remaining_bits = (2 * this->norbs) % this->bit_length;
-
-        size_t braIdx = (ia - helper.braAlphaStart) * (helper.braBetaEnd - helper.braBetaStart) + ib - helper.braBetaStart;
-        if( (braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
-            size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
-                            + jb - helper.ketBetaStart;
-
-            size_t* DetI = this->det_I + ((ia - helper.braAlphaStart) * this->bdets_size + ib - helper.braBetaStart) * this->size_D;
-            size_t* DetJ = this->det_J + ((ja - helper.ketAlphaStart) * this->bdets_size + jb - helper.ketBetaStart) * this->size_D;
-            ElemT WeightI = this->Wb[braIdx];
-            ElemT WeightJ = this->T[ketIdx];
-
-            for (size_t i = 0; i < full_words; ++i) {
-                size_t diff_c = DetI[i] & ~DetJ[i];
-                size_t diff_d = DetJ[i] & ~DetI[i];
-                for (size_t bit_pos = 0; bit_pos < this->bit_length; ++bit_pos) {
-                    if (diff_c & (static_cast<size_t>(1) << bit_pos)) {
-                        if (nc < 2)
-                            c[nc] = i * this->bit_length + bit_pos;
-                        nc++;
-                    }
-                    if (diff_d & (static_cast<size_t>(1) << bit_pos)) {
-                        if (nd < 2)
-                            d[nd] = i * this->bit_length + bit_pos;
-                        nd++;
-                    }
-                }
-            }
-            if (remaining_bits > 0) {
-                size_t mask = (static_cast<size_t>(1) << remaining_bits) - 1;
-                size_t diff_c = (DetI[full_words] & ~DetJ[full_words]) & mask;
-                size_t diff_d = (DetJ[full_words] & ~DetI[full_words]) & mask;
-                for (size_t bit_pos = 0; bit_pos < remaining_bits; ++bit_pos) {
-                    if (diff_c & (static_cast<size_t>(1) << bit_pos)) {
-                        if (nc < 2)
-                            c[nc] = this->bit_length * full_words + bit_pos;
-                        nc++;
-                    }
-                    if (diff_d & (static_cast<size_t>(1) << bit_pos)) {
-                        if (nd < 2)
-                            d[nd] = this->bit_length * full_words + bit_pos;
-                        nd++;
-                    }
-                }
-            }
-
-            if (nc == 0) {
-                ZeroDiffCorrelation(DetI, WeightI);
-            }
-            else if (nc == 1) {
-                OneDiffCorrelation(DetI, WeightI, WeightJ, c[0], d[0]);
-            }
-            else if (nc == 2) {
-                TwoDiffCorrelation(DetI, WeightI, WeightJ, c[0], c[1], d[0], d[1]);
-            }
-        }
-    }
 };
 
 template <typename ElemT>
@@ -238,6 +169,43 @@ public:
     }
 };
 
+template <typename ElemT>
+class CorrelationInitNoCache : public CorrelationKernelBase<ElemT>
+{
+protected:
+    TaskHelpersThrust<ElemT> helper;
+    size_t offset;
+public:
+    CorrelationInitNoCache(const TaskHelpersThrust<ElemT>& h,
+                const MultDataThrust<ElemT>& data,
+                const thrust::device_vector<ElemT>& v_wb,
+                const thrust::device_vector<ElemT>& v_t,
+                thrust::device_vector<ElemT>& b1,
+                thrust::device_vector<ElemT>& b2,
+                size_t o ) : CorrelationKernelBase<ElemT>(data, v_wb, v_t, b1, b2)
+    {
+        helper = h;
+        offset = o;
+    }
+
+    // kernel entry point
+    __device__ __host__ void operator()(size_t i)
+    {
+        size_t braIdx = i + offset;
+        size_t braBetaSize = helper.braBetaEnd - helper.braBetaStart;
+        size_t a = braIdx / braBetaSize;
+        size_t b = braIdx - a * braBetaSize;
+        size_t* DetI = this->det_I + i * this->size_D;
+        size_t ia = a + helper.braAlphaStart;
+        size_t ib = b + helper.braBetaStart;
+
+        if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->size_D, this->bdets + ib * this->size_D);
+            this->ZeroDiffCorrelation(DetI, this->Wb[braIdx]);
+        }
+    }
+};
+
 
 template <typename ElemT>
 class CorrelationAlphaBeta : public CorrelationKernelBase<ElemT>
@@ -270,7 +238,19 @@ public:
             size_t ib = helper.SinglesFromBetaBraIndex[k];
             size_t jb = helper.SinglesFromBetaKetIndex[k];
 
-            this->CorrelationTermAddition(helper, ia, ib, ja, jb);
+            size_t braIdx = (ia - helper.braAlphaStart) * (helper.braBetaEnd - helper.braBetaStart) + ib - helper.braBetaStart;
+            if( (braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
+                size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                                + jb - helper.ketBetaStart;
+
+                size_t* DetI = this->det_I + ((ia - helper.braAlphaStart) * this->bdets_size + ib - helper.braBetaStart) * this->size_D;
+                ElemT WeightI = this->Wb[braIdx];
+                ElemT WeightJ = this->T[ketIdx];
+
+                this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                                    helper.SinglesAlphaCrAnSM[j], helper.SinglesBetaCrAnSM[k],
+                                    helper.SinglesAlphaCrAnSM[j + helper.size_single_alpha], helper.SinglesBetaCrAnSM[k + helper.size_single_beta]);
+            }
         }
     }
 };
@@ -305,7 +285,17 @@ public:
             size_t ia = helper.SinglesFromAlphaBraIndex[j];
             size_t ja = helper.SinglesFromAlphaKetIndex[j];
             size_t ib = k + helper.braBetaStart;
-            this->CorrelationTermAddition(helper, ia, ib, ja, ib);
+            size_t jb = ib;
+            size_t braIdx = (ia - helper.braAlphaStart) * (helper.braBetaEnd - helper.braBetaStart) + ib - helper.braBetaStart;
+            if( (braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
+                size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                                + jb - helper.ketBetaStart;
+
+                size_t* DetI = this->det_I + ((ia - helper.braAlphaStart) * this->bdets_size + ib - helper.braBetaStart) * this->size_D;
+                ElemT WeightI = this->Wb[braIdx];
+                ElemT WeightJ = this->T[ketIdx];
+                this->OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesAlphaCrAnSM[j], helper.SinglesAlphaCrAnSM[j + helper.size_single_alpha]);
+            }
         }
     }
 };
@@ -339,7 +329,20 @@ public:
             size_t ia = helper.DoublesFromAlphaBraIndex[j];
             size_t ja = helper.DoublesFromAlphaKetIndex[j];
             size_t ib = k + helper.braBetaStart;
-            this->CorrelationTermAddition(helper, ia, ib, ja, ib);
+            size_t jb = ib;
+            size_t braIdx = (ia - helper.braAlphaStart) * (helper.braBetaEnd - helper.braBetaStart) + ib - helper.braBetaStart;
+            if( (braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
+                size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                                + jb - helper.ketBetaStart;
+
+                size_t* DetI = this->det_I + ((ia - helper.braAlphaStart) * this->bdets_size + ib - helper.braBetaStart) * this->size_D;
+                ElemT WeightI = this->Wb[braIdx];
+                ElemT WeightJ = this->T[ketIdx];
+
+                this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                                    helper.DoublesAlphaCrAnSM[j], helper.DoublesAlphaCrAnSM[j + helper.size_double_alpha],
+                                    helper.DoublesAlphaCrAnSM[j + 2 * helper.size_double_alpha], helper.DoublesAlphaCrAnSM[j + 3 * helper.size_double_alpha]);
+            }
         }
     }
 };
@@ -371,9 +374,19 @@ public:
             size_t k = (i + offset) - j * helper.size_single_beta;
 
             size_t ia = j + helper.braAlphaStart;
+            size_t ja = ia;
             size_t ib = helper.SinglesFromBetaBraIndex[k];
             size_t jb = helper.SinglesFromBetaKetIndex[k];
-            this->CorrelationTermAddition(helper, ia, ib, ia, jb);
+            size_t braIdx = (ia - helper.braAlphaStart) * (helper.braBetaEnd - helper.braBetaStart) + ib - helper.braBetaStart;
+            if( (braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
+                size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                                + jb - helper.ketBetaStart;
+
+                size_t* DetI = this->det_I + ((ia - helper.braAlphaStart) * this->bdets_size + ib - helper.braBetaStart) * this->size_D;
+                ElemT WeightI = this->Wb[braIdx];
+                ElemT WeightJ = this->T[ketIdx];
+                this->OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesBetaCrAnSM[k], helper.SinglesBetaCrAnSM[k + helper.size_single_beta]);
+            }
         }
     }
 };
@@ -405,14 +418,188 @@ public:
             size_t k = (i + offset) - j * helper.size_double_beta;
 
             size_t ia = j + helper.braAlphaStart;
+            size_t ja = ia;
             size_t ib = helper.DoublesFromBetaBraIndex[k];
             size_t jb = helper.DoublesFromBetaKetIndex[k];
-            this->CorrelationTermAddition(helper, ia, ib, ia, jb);
+            size_t braIdx = (ia - helper.braAlphaStart) * (helper.braBetaEnd - helper.braBetaStart) + ib - helper.braBetaStart;
+            if( (braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
+                size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                                + jb - helper.ketBetaStart;
+
+                size_t* DetI = this->det_I + ((ia - helper.braAlphaStart) * this->bdets_size + ib - helper.braBetaStart) * this->size_D;
+                ElemT WeightI = this->Wb[braIdx];
+                ElemT WeightJ = this->T[ketIdx];
+
+                this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                                            helper.DoublesBetaCrAnSM[k], helper.DoublesBetaCrAnSM[k + helper.size_double_beta],
+                                            helper.DoublesBetaCrAnSM[k + 2 * helper.size_double_beta], helper.DoublesBetaCrAnSM[k + 3 * helper.size_double_beta]);
+            }
         }
     }
 };
 
 
+template <typename ElemT>
+class CorrelationTask0 : public CorrelationKernelBase<ElemT>
+{
+protected:
+    TaskHelpersThrust<ElemT> helper;
+    size_t offset;
+public:
+    CorrelationTask0(const TaskHelpersThrust<ElemT>& h,
+                const MultDataThrust<ElemT>& data,
+                const thrust::device_vector<ElemT>& v_wb,
+                const thrust::device_vector<ElemT>& v_t,
+                thrust::device_vector<ElemT>& b1,
+                thrust::device_vector<ElemT>& b2,
+                size_t o ) : CorrelationKernelBase<ElemT>(data, v_wb, v_t, b1, b2)
+    {
+        helper = h;
+        offset = o;
+    }
+
+    // kernel entry point
+    __device__ __host__ void operator()(size_t i)
+    {
+        size_t braIdx = i + offset;
+        size_t braBetaSize = helper.braBetaEnd - helper.braBetaStart;
+        size_t a = braIdx / braBetaSize;
+        size_t b = braIdx - a * braBetaSize;
+        size_t* DetI = this->det_I + i * this->size_D;
+        size_t ia = a + helper.braAlphaStart;
+        size_t ib = b + helper.braBetaStart;
+
+        if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->size_D, this->bdets + ib * this->size_D);
+            ElemT WeightI = this->Wb[braIdx];
+
+            for (size_t j = helper.SinglesFromAlphaOffset[a]; j < helper.SinglesFromAlphaOffset[a + 1]; j++) {
+                size_t ja = helper.SinglesFromAlphaKetIndex[j];
+                for (size_t k = helper.SinglesFromBetaOffset[b]; k < helper.SinglesFromBetaOffset[b + 1]; k++) {
+                    size_t jb = helper.SinglesFromBetaKetIndex[k];
+                    size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                                    + jb - helper.ketBetaStart;
+                    ElemT WeightJ = this->T[ketIdx];
+                    this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                                        helper.SinglesAlphaCrAnSM[j], helper.SinglesBetaCrAnSM[k],
+                                        helper.SinglesAlphaCrAnSM[j + helper.size_single_alpha], helper.SinglesBetaCrAnSM[k + helper.size_single_beta]);
+                }
+            }
+        }
+    }
+};
+
+template <typename ElemT>
+class CorrelationTask1 : public CorrelationKernelBase<ElemT>
+{
+protected:
+    TaskHelpersThrust<ElemT> helper;
+    size_t offset;
+public:
+    CorrelationTask1(const TaskHelpersThrust<ElemT>& h,
+                const MultDataThrust<ElemT>& data,
+                const thrust::device_vector<ElemT>& v_wb,
+                const thrust::device_vector<ElemT>& v_t,
+                thrust::device_vector<ElemT>& b1,
+                thrust::device_vector<ElemT>& b2,
+                size_t o ) : CorrelationKernelBase<ElemT>(data, v_wb, v_t, b1, b2)
+    {
+        helper = h;
+        offset = o;
+    }
+
+    // kernel entry point
+    __device__ __host__ void operator()(size_t i)
+    {
+        size_t braIdx = i + offset;
+        size_t braBetaSize = helper.braBetaEnd - helper.braBetaStart;
+        size_t a = braIdx / braBetaSize;
+        size_t b = braIdx - a * braBetaSize;
+        size_t* DetI = this->det_I + i * this->size_D;
+        size_t ia = a + helper.braAlphaStart;
+        size_t ib = b + helper.braBetaStart;
+
+        if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->size_D, this->bdets + ib * this->size_D);
+            ElemT WeightI = this->Wb[braIdx];
+
+            for (size_t k = helper.SinglesFromBetaOffset[b]; k < helper.SinglesFromBetaOffset[b + 1]; k++) {
+                size_t ja = ia;
+                size_t jb = helper.SinglesFromBetaKetIndex[k];
+                size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                                + jb - helper.ketBetaStart;
+                ElemT WeightJ = this->T[ketIdx];
+                this->OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesBetaCrAnSM[k], helper.SinglesBetaCrAnSM[k + helper.size_single_alpha]);
+            }
+            for (size_t k = helper.DoublesFromBetaOffset[b]; k < helper.DoublesFromBetaOffset[b + 1]; k++) {
+                size_t ja = ia;
+                size_t jb = helper.DoublesFromBetaKetIndex[k];
+                size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                                + jb - helper.ketBetaStart;
+                ElemT WeightJ = this->T[ketIdx];
+                this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                                        helper.DoublesBetaCrAnSM[k], helper.DoublesBetaCrAnSM[k + helper.size_double_alpha],
+                                        helper.DoublesBetaCrAnSM[k + 2 * helper.size_double_alpha], helper.DoublesBetaCrAnSM[k + 3 * helper.size_double_alpha]);
+           }
+        }
+    }
+};
+
+template <typename ElemT>
+class CorrelationTask2 : public CorrelationKernelBase<ElemT>
+{
+protected:
+    TaskHelpersThrust<ElemT> helper;
+    size_t offset;
+public:
+    CorrelationTask2(const TaskHelpersThrust<ElemT>& h,
+                const MultDataThrust<ElemT>& data,
+                const thrust::device_vector<ElemT>& v_wb,
+                const thrust::device_vector<ElemT>& v_t,
+                thrust::device_vector<ElemT>& b1,
+                thrust::device_vector<ElemT>& b2,
+                size_t o ) : CorrelationKernelBase<ElemT>(data, v_wb, v_t, b1, b2)
+    {
+        helper = h;
+        offset = o;
+    }
+
+    // kernel entry point
+    __device__ __host__ void operator()(size_t i)
+    {
+        size_t braIdx = i + offset;
+        size_t braBetaSize = helper.braBetaEnd - helper.braBetaStart;
+        size_t a = braIdx / braBetaSize;
+        size_t b = braIdx - a * braBetaSize;
+        size_t* DetI = this->det_I + i * this->size_D;
+        size_t ia = a + helper.braAlphaStart;
+        size_t ib = b + helper.braBetaStart;
+
+        if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->size_D, this->bdets + ib * this->size_D);
+            ElemT WeightI = this->Wb[braIdx];
+
+            for (size_t j = helper.SinglesFromAlphaOffset[a]; j < helper.SinglesFromAlphaOffset[a + 1]; j++) {
+                size_t ja = helper.SinglesFromAlphaKetIndex[j];
+                size_t jb = ib;
+                size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                                + jb - helper.ketBetaStart;
+                ElemT WeightJ = this->T[ketIdx];
+                this->OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesAlphaCrAnSM[j], helper.SinglesAlphaCrAnSM[j + helper.size_single_beta]);
+            }
+            for (size_t j = helper.DoublesFromAlphaOffset[a]; j < helper.DoublesFromAlphaOffset[a + 1]; j++) {
+                size_t ja = helper.DoublesFromAlphaKetIndex[j];
+                size_t jb = ib;
+                size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                                + jb - helper.ketBetaStart;
+                ElemT WeightJ = this->T[ketIdx];
+                this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                                    helper.DoublesAlphaCrAnSM[j], helper.DoublesAlphaCrAnSM[j + helper.size_double_beta],
+                                    helper.DoublesAlphaCrAnSM[j + 2 * helper.size_double_beta], helper.DoublesAlphaCrAnSM[j + 3 * helper.size_double_beta]);
+            }
+        }
+    }
+};
 
 /**
     Function to evaluate the two-particle correlation functions
@@ -472,92 +659,19 @@ void Correlation(const std::vector<ElemT> &W_in,
     size_t offset = 0;
     size_t size = 0;
     if (mpi_rank_t == 0) {
-        // precalculate DetI and DetJ (if update needed)
-        data.UpdateDet(0);
+        if (data.use_precalculated_dets) {
+            // precalculate DetI (if update needed)
+            data.UpdateDet(0);
 
-        offset = 0;
-        size = braAlphaSize * braBetaSize;
-        while (offset < size) {
-            size_t num_threads = data.num_max_threads;
-            if (offset + num_threads > size) {
-                num_threads = size - offset;
-            }
-
-            CorrelationInit kernel(data.helper[0], data, W, T, onebody, twobody, offset);
-            kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
-
-            auto ci = thrust::counting_iterator<size_t>(0);
-            thrust::for_each_n(thrust::device, ci, num_threads, kernel);
-            offset += num_threads;
-        }
-    }
-
-    for (size_t task = 0; task < data.helper.size(); task++) {
-        size_t ketAlphaSize = data.helper[task].ketAlphaEnd - data.helper[task].ketAlphaStart;
-        size_t ketBetaSize = data.helper[task].ketBetaEnd - data.helper[task].ketBetaStart;
-
-        // precalculate DetI and DetJ (if update needed)
-        data.UpdateDet(task);
-
-        if (data.helper[task].taskType == 2) { // beta range are same
             offset = 0;
-            size = data.helper[task].size_single_alpha * braBetaSize;
+            size = braAlphaSize * braBetaSize;
             while (offset < size) {
                 size_t num_threads = data.num_max_threads;
                 if (offset + num_threads > size) {
                     num_threads = size - offset;
                 }
 
-                CorrelationSingleAlpha kernel(data.helper[task], data, W, T, onebody, twobody, offset);
-                kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
-
-                auto ci = thrust::counting_iterator<size_t>(0);
-                thrust::for_each_n(thrust::device, ci, num_threads, kernel);
-                offset += num_threads;
-            }
-
-            offset = 0;
-            size = data.helper[task].size_double_alpha * braBetaSize;
-            while (offset < size) {
-                size_t num_threads = data.num_max_threads;
-                if (offset + num_threads > size) {
-                    num_threads = size - offset;
-                }
-
-                CorrelationDoubleAlpha kernel(data.helper[task], data, W, T, onebody, twobody, offset);
-                kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
-
-                auto ci = thrust::counting_iterator<size_t>(0);
-                thrust::for_each_n(thrust::device, ci, num_threads, kernel);
-                offset += num_threads;
-            }
-        }
-        else if (data.helper[task].taskType == 1) {
-            offset = 0;
-            size = data.helper[task].size_single_beta * braAlphaSize;
-            while (offset < size) {
-                size_t num_threads = data.num_max_threads;
-                if (offset + num_threads > size) {
-                    num_threads = size - offset;
-                }
-
-                CorrelationSingleBeta kernel(data.helper[task], data, W, T, onebody, twobody, offset);
-                kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
-
-                auto ci = thrust::counting_iterator<size_t>(0);
-                thrust::for_each_n(thrust::device, ci, num_threads, kernel);
-                offset += num_threads;
-            }
-
-            offset = 0;
-            size = data.helper[task].size_double_beta * braAlphaSize;
-            while (offset < size) {
-                size_t num_threads = data.num_max_threads;
-                if (offset + num_threads > size) {
-                    num_threads = size - offset;
-                }
-
-                CorrelationDoubleBeta kernel(data.helper[task], data, W, T, onebody, twobody, offset);
+                CorrelationInit kernel(data.helper[0], data, W, T, onebody, twobody, offset);
                 kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
 
                 auto ci = thrust::counting_iterator<size_t>(0);
@@ -566,21 +680,163 @@ void Correlation(const std::vector<ElemT> &W_in,
             }
         } else {
             offset = 0;
-            size = data.helper[task].size_single_alpha * data.helper[task].size_single_beta;
+            size = braAlphaSize * braBetaSize;
             while (offset < size) {
                 size_t num_threads = data.num_max_threads;
                 if (offset + num_threads > size) {
                     num_threads = size - offset;
                 }
 
-                CorrelationAlphaBeta kernel(data.helper[task], data, W, T, onebody, twobody, offset);
+                CorrelationInitNoCache kernel(data.helper[0], data, W, T, onebody, twobody, offset);
                 kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
 
                 auto ci = thrust::counting_iterator<size_t>(0);
                 thrust::for_each_n(thrust::device, ci, num_threads, kernel);
                 offset += num_threads;
             }
-        } // if ( helper[task].taskType ==  )
+        }
+    }
+
+    for (size_t task = 0; task < data.helper.size(); task++) {
+        size_t ketAlphaSize = data.helper[task].ketAlphaEnd - data.helper[task].ketAlphaStart;
+        size_t ketBetaSize = data.helper[task].ketBetaEnd - data.helper[task].ketBetaStart;
+
+        if (data.use_precalculated_dets) {
+            // precalculate DetI (if update needed)
+            data.UpdateDet(task);
+
+            if (data.helper[task].taskType == 2) { // beta range are same
+                offset = 0;
+                size = data.helper[task].size_single_alpha * braBetaSize;
+                while (offset < size) {
+                    size_t num_threads = data.num_max_threads;
+                    if (offset + num_threads > size) {
+                        num_threads = size - offset;
+                    }
+
+                    CorrelationSingleAlpha kernel(data.helper[task], data, W, T, onebody, twobody, offset);
+                    kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+                    auto ci = thrust::counting_iterator<size_t>(0);
+                    thrust::for_each_n(thrust::device, ci, num_threads, kernel);
+                    offset += num_threads;
+                }
+
+                offset = 0;
+                size = data.helper[task].size_double_alpha * braBetaSize;
+                while (offset < size) {
+                    size_t num_threads = data.num_max_threads;
+                    if (offset + num_threads > size) {
+                        num_threads = size - offset;
+                    }
+
+                    CorrelationDoubleAlpha kernel(data.helper[task], data, W, T, onebody, twobody, offset);
+                    kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+                    auto ci = thrust::counting_iterator<size_t>(0);
+                    thrust::for_each_n(thrust::device, ci, num_threads, kernel);
+                    offset += num_threads;
+                }
+            }
+            else if (data.helper[task].taskType == 1) {
+                offset = 0;
+                size = data.helper[task].size_single_beta * braAlphaSize;
+                while (offset < size) {
+                    size_t num_threads = data.num_max_threads;
+                    if (offset + num_threads > size) {
+                        num_threads = size - offset;
+                    }
+
+                    CorrelationSingleBeta kernel(data.helper[task], data, W, T, onebody, twobody, offset);
+                    kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+                    auto ci = thrust::counting_iterator<size_t>(0);
+                    thrust::for_each_n(thrust::device, ci, num_threads, kernel);
+                    offset += num_threads;
+                }
+
+                offset = 0;
+                size = data.helper[task].size_double_beta * braAlphaSize;
+                while (offset < size) {
+                    size_t num_threads = data.num_max_threads;
+                    if (offset + num_threads > size) {
+                        num_threads = size - offset;
+                    }
+
+                    CorrelationDoubleBeta kernel(data.helper[task], data, W, T, onebody, twobody, offset);
+                    kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+                    auto ci = thrust::counting_iterator<size_t>(0);
+                    thrust::for_each_n(thrust::device, ci, num_threads, kernel);
+                    offset += num_threads;
+                }
+            } else {
+                offset = 0;
+                size = data.helper[task].size_single_alpha * data.helper[task].size_single_beta;
+                while (offset < size) {
+                    size_t num_threads = data.num_max_threads;
+                    if (offset + num_threads > size) {
+                        num_threads = size - offset;
+                    }
+
+                    CorrelationAlphaBeta kernel(data.helper[task], data, W, T, onebody, twobody, offset);
+                    kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+                    auto ci = thrust::counting_iterator<size_t>(0);
+                    thrust::for_each_n(thrust::device, ci, num_threads, kernel);
+                    offset += num_threads;
+                }
+            } // if ( helper[task].taskType ==  )
+        } else {    // no det cache
+            if (data.helper[task].taskType == 2) {
+                offset = 0;
+                size = braAlphaSize * braBetaSize;
+                while (offset < size) {
+                    size_t num_threads = data.num_max_threads;
+                    if (offset + num_threads > size) {
+                        num_threads = size - offset;
+                    }
+                    CorrelationTask2 kernel(data.helper[task], data, W, T, onebody, twobody, offset);
+                    kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+                    auto ci = thrust::counting_iterator<size_t>(0);
+                    thrust::for_each_n(thrust::device, ci, num_threads, kernel);
+                    offset += num_threads;
+                }
+            } else if(data.helper[task].taskType == 1) {
+                offset = 0;
+                size = braAlphaSize * braBetaSize;
+                while (offset < size) {
+                    size_t num_threads = data.num_max_threads;
+                    if (offset + num_threads > size) {
+                        num_threads = size - offset;
+                    }
+
+                    CorrelationTask1 kernel(data.helper[task], data, W, T, onebody, twobody, offset);
+                    kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+                    auto ci = thrust::counting_iterator<size_t>(0);
+                    thrust::for_each_n(thrust::device, ci, num_threads, kernel);
+                    offset += num_threads;
+                }
+            } else {
+                offset = 0;
+                size = braAlphaSize * braBetaSize;
+                while (offset < size) {
+                    size_t num_threads = data.num_max_threads;
+                    if (offset + num_threads > size) {
+                        num_threads = size - offset;
+                    }
+
+                    CorrelationTask0 kernel(data.helper[task], data, W, T, onebody, twobody, offset);
+                    kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+                    auto ci = thrust::counting_iterator<size_t>(0);
+                    thrust::for_each_n(thrust::device, ci, num_threads, kernel);
+                    offset += num_threads;
+                }
+            }
+        }
 
         if (data.helper[task].taskType == 0 && task != data.helper.size() - 1) {
             int adetslide = data.helper[task].adetShift - data.helper[task + 1].adetShift;
