@@ -38,6 +38,13 @@ public:
     size_t* DoublesFromBetaBraIndex;
     size_t* DoublesFromBetaKetIndex;
 
+    // pointer to cached c and d for energy calculation
+    int* base_cran;
+    int* SinglesAlphaCrAnSM;
+    int* SinglesBetaCrAnSM;
+    int* DoublesAlphaCrAnSM;
+    int* DoublesBetaCrAnSM;
+
     // offset for non-load balanced mode
     size_t* SinglesFromAlphaOffset;
     size_t* SinglesFromBetaOffset;
@@ -75,6 +82,12 @@ public:
         DoublesFromBetaBraIndex = other.DoublesFromBetaBraIndex;
         DoublesFromBetaKetIndex = other.DoublesFromBetaKetIndex;
 
+        base_cran = other.base_cran;
+        SinglesAlphaCrAnSM = other.SinglesAlphaCrAnSM;
+        SinglesBetaCrAnSM = other.SinglesBetaCrAnSM;
+        DoublesAlphaCrAnSM = other.DoublesAlphaCrAnSM;
+        DoublesBetaCrAnSM = other.DoublesBetaCrAnSM;
+
         SinglesFromAlphaOffset = other.SinglesFromAlphaOffset;
         SinglesFromBetaOffset = other.SinglesFromBetaOffset;
         DoublesFromAlphaOffset = other.DoublesFromAlphaOffset;
@@ -86,7 +99,7 @@ public:
         size_double_beta = other.size_double_beta;
     }
 
-    TaskHelpersThrust(thrust::device_vector<size_t>& storage, const TaskHelpers& helper, bool store_offset = false)
+    TaskHelpersThrust(thrust::device_vector<size_t>& storage, thrust::device_vector<int>& cran_storage, const TaskHelpers& helper, bool store_offset = false)
     {
         braAlphaStart = helper.braAlphaStart;
         braAlphaEnd = helper.braAlphaEnd;
@@ -105,6 +118,7 @@ public:
         thrust::host_vector<size_t> offset_ij;
 
         size_t size = 0;
+        size_t size_cran = 0;
         // storage for offsets
         if (store_offset) {
             size += ((braAlphaSize + 1) + (braBetaSize + 1)) * 2;
@@ -125,6 +139,7 @@ public:
         offset_single_alpha[braAlphaSize] = size_single_alpha;
         offset_double_alpha[braAlphaSize] = size_double_alpha;
         size += size_single_alpha + size_double_alpha;
+        size_cran += size_single_alpha * 2 + size_double_alpha * 4;
 
         std::vector<size_t> offset_single_beta(braBetaSize + 1);
         std::vector<size_t> offset_double_beta(braBetaSize + 1);
@@ -137,6 +152,7 @@ public:
         offset_single_beta[braBetaSize] = size_single_beta;
         offset_double_beta[braBetaSize] = size_double_beta;
         size += size_single_beta + size_double_beta;
+        size_cran += size_single_beta * 2 + size_double_beta * 4;
 
         if (!store_offset)
             size *= 2;
@@ -144,7 +160,6 @@ public:
         base_memory = (size_t*)thrust::raw_pointer_cast(storage.data());
 
         size_t count = 0;
-
         if (store_offset) {
             // store offsets for non-balanced
             SinglesFromAlphaOffset = base_memory + count;
@@ -223,6 +238,65 @@ public:
         if (!store_offset)
             count += size_double_beta;
         count += size_double_beta;
+
+        // convert CrAn from AoS to SoA
+        size_t count_cran = 0;
+        std::vector<int> buf;
+
+        cran_storage.resize(size_cran);
+        base_cran = (int*)thrust::raw_pointer_cast(cran_storage.data());
+
+        SinglesAlphaCrAnSM = base_cran + count_cran;
+        buf.resize(size_single_alpha * 2);
+#pragma omp parallel for
+        for(size_t i=0; i < braAlphaSize; i++) {
+            for (int j=0; j < helper.SinglesFromAlphaLen[i]; j++) {
+                buf[offset_single_alpha[i] + j] = helper.SinglesAlphaCrAnSM[i][j * 2];
+                buf[size_single_alpha + offset_single_alpha[i] + j] = helper.SinglesAlphaCrAnSM[i][j * 2 + 1];
+            }
+        }
+        thrust::copy_n(buf.begin(), size_single_alpha * 2, cran_storage.begin() + count_cran);
+        count_cran += size_single_alpha * 2;
+
+        DoublesAlphaCrAnSM = base_cran + count_cran;
+        buf.resize(size_double_alpha * 4);
+#pragma omp parallel for
+        for(size_t i=0; i < braAlphaSize; i++) {
+            for (int j=0; j < helper.DoublesFromAlphaLen[i]; j++) {
+                buf[offset_double_alpha[i] + j] = helper.DoublesAlphaCrAnSM[i][j * 4];
+                buf[offset_double_alpha[i] + j + size_double_alpha] = helper.DoublesAlphaCrAnSM[i][j * 4 + 1];
+                buf[offset_double_alpha[i] + j + size_double_alpha * 2] = helper.DoublesAlphaCrAnSM[i][j * 4 + 2];
+                buf[offset_double_alpha[i] + j + size_double_alpha * 3] = helper.DoublesAlphaCrAnSM[i][j * 4 + 3];
+            }
+        }
+        thrust::copy_n(buf.begin(), size_double_alpha * 4, cran_storage.begin() + count_cran);
+        count_cran += size_double_alpha * 4;
+
+        SinglesBetaCrAnSM = base_cran + count_cran;
+        buf.resize(size_single_beta * 2);
+#pragma omp parallel for
+        for(size_t i=0; i < braBetaSize; i++) {
+            for (int j=0; j < helper.SinglesFromBetaLen[i]; j++) {
+                buf[offset_single_beta[i] + j] = helper.SinglesBetaCrAnSM[i][j * 2];
+                buf[size_single_beta + offset_single_beta[i] + j] = helper.SinglesBetaCrAnSM[i][j * 2 + 1];
+            }
+        }
+        thrust::copy_n(buf.begin(), size_single_beta * 2, cran_storage.begin() + count_cran);
+        count_cran += size_single_beta * 2;
+
+        DoublesBetaCrAnSM = base_cran + count_cran;
+        buf.resize(size_double_beta * 4);
+#pragma omp parallel for
+        for(size_t i=0; i < braBetaSize; i++) {
+            for (int j=0; j < helper.DoublesFromBetaLen[i]; j++) {
+                buf[offset_double_beta[i] + j] = helper.DoublesBetaCrAnSM[i][j * 4];
+                buf[offset_double_beta[i] + j + size_double_beta] = helper.DoublesBetaCrAnSM[i][j * 4 + 1];
+                buf[offset_double_beta[i] + j + size_double_beta * 2] = helper.DoublesBetaCrAnSM[i][j * 4 + 2];
+                buf[offset_double_beta[i] + j + size_double_beta * 3] = helper.DoublesBetaCrAnSM[i][j * 4 + 3];
+            }
+        }
+        thrust::copy_n(buf.begin(), size_double_beta * 4, cran_storage.begin() + count_cran);
+        count_cran += size_double_beta * 4;
     }
 };
 
