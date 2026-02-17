@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "pybind11>=2.6.0", "mpi4py>=3.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sbd"
+version = "1.2.0"
+description = "Python bindings for Selected Basis Diagonalization (SBD) library"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+authors = [
+    {name = "Tomonori Shirakawa"}
+]
+keywords = ["quantum chemistry", "diagonalization", "tensor product basis", "MPI"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: C++",
+]
+dependencies = [
+    "pybind11>=2.6.0",
+    "mpi4py>=3.0.0",
+    "numpy>=1.19.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-repo/sbd"
+Documentation = "https://github.com/your-repo/sbd/docs"
+Repository = "https://github.com/your-repo/sbd"
