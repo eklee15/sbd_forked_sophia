@@ -39,11 +39,9 @@ PYBIND11_MODULE(_core, m) {
     py::class_<sbd::FCIDump>(m, "FCIDump", "FCIDUMP data structure")
         .def(py::init<>())
         .def_readwrite("header", &sbd::FCIDump::header,
-                      "Header information as dictionary")
-        .def_readwrite("one_electron_integrals", &sbd::FCIDump::one_electron_integrals,
-                      "One-electron integrals")
-        .def_readwrite("two_electron_integrals", &sbd::FCIDump::two_electron_integrals,
-                      "Two-electron integrals");
+                      "Header information as dictionary (map<string, string>)")
+        .def_readwrite("integrals", &sbd::FCIDump::integrals,
+                      "Integral data as list of tuples (value, i, j, k, l)");
 
     // ========================================================================
     // Bind TPB SBD configuration structure

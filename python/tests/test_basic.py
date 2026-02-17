@@ -67,8 +67,7 @@ class TestBasicBindings:
         fcidump = sbd.FCIDump()
         assert fcidump is not None
         assert hasattr(fcidump, 'header')
-        assert hasattr(fcidump, 'one_electron_integrals')
-        assert hasattr(fcidump, 'two_electron_integrals')
+        assert hasattr(fcidump, 'integrals')
     
     def test_functions_exist(self):
         """Test that main functions exist"""
