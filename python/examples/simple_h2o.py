@@ -24,14 +24,18 @@ def main():
     # Configure the calculation
     config = sbd.TPB_SBD()
     config.max_it = 100          # Maximum iterations
-    config.eps = 1e-6            # Convergence tolerance
+    config.eps = 1e-3            # Convergence tolerance
     config.do_rdm = 0            # Don't calculate full RDM (faster)
     config.method = 0            # Davidson method
     config.bit_length = 20       # Bit length for determinants
+    # need 8x2^n ranks
+    config.adet_comm_size = 2
+    config.bdet_comm_size = 2
+    config.task_comm_size = 2
     
     # Paths to data files (adjust as needed)
     fcidump_file = "../../data/h2o/fcidump.txt"
-    adet_file = "../../data/h2o/h2o-1em5-alpha.txt"
+    adet_file = "../../data/h2o/h2o-1em3-alpha.txt"
     
     if rank == 0:
         print("\nConfiguration:")
