@@ -6,6 +6,7 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 import sys
 import os
+import subprocess
 import pybind11
 
 class get_pybind_include(object):
@@ -13,23 +14,62 @@ class get_pybind_include(object):
     def __str__(self):
         return pybind11.get_include()
 
-# Get MPI include path from environment or use default
-mpi_include = os.environ.get('MPI_INCLUDE_PATH', '/usr/include/mpi')
+def get_mpi_flags():
+    """Get MPI compiler and linker flags"""
+    try:
+        # Try to get MPI compile flags
+        compile_flags = subprocess.check_output(['mpicc', '--showme:compile'],
+                                                universal_newlines=True).strip().split()
+        link_flags = subprocess.check_output(['mpicc', '--showme:link'],
+                                            universal_newlines=True).strip().split()
+        
+        include_dirs = [flag[2:] for flag in compile_flags if flag.startswith('-I')]
+        library_dirs = [flag[2:] for flag in link_flags if flag.startswith('-L')]
+        libraries = [flag[2:] for flag in link_flags if flag.startswith('-l')]
+        extra_link = [flag for flag in link_flags if not flag.startswith('-l') and not flag.startswith('-L')]
+        
+        return include_dirs, library_dirs, libraries, extra_link
+    except:
+        # Fallback to environment variable or default
+        mpi_include = os.environ.get('MPI_INCLUDE_PATH', '/usr/include/mpi')
+        return [mpi_include], [], ['mpi'], []
+
+# Get MPI configuration
+mpi_includes, mpi_lib_dirs, mpi_libs, mpi_link_flags = get_mpi_flags()
+
+# Get MPI include path from environment or use detected
+if 'MPI_INCLUDE_PATH' in os.environ:
+    mpi_includes = [os.environ['MPI_INCLUDE_PATH']]
+
+# Build include directories
+include_dirs = [get_pybind_include(), 'include'] + mpi_includes
+
+# Build library directories
+library_dirs = mpi_lib_dirs
+
+# Build libraries list - use MPI libs + standard math libs
+libraries = mpi_libs + ['lapack', 'blas']
+
+# Build extra link args
+extra_link_args = ['-fopenmp'] + mpi_link_flags
 
 ext_modules = [
     Extension(
         'sbd._core',
         ['python/bindings.cpp'],
-        include_dirs=[
-            get_pybind_include(),
-            'include',
-            mpi_include,
-        ],
-        libraries=['mpi', 'lapack', 'blas'],
-        library_dirs=[],
+        include_dirs=include_dirs,
+        libraries=libraries,
+        library_dirs=library_dirs,
         language='c++',
-        extra_compile_args=['-std=c++17', '-fopenmp', '-O3'],
-        extra_link_args=['-fopenmp'],
+        extra_compile_args=[
+            '-std=c++17',
+            '-fopenmp',
+            '-O2',
+            '-Wno-sign-compare',
+            '-Wno-unused-variable',
+            '-fPIC'
+        ],
+        extra_link_args=extra_link_args,
     ),
 ]
 
