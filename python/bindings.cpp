@@ -1,6 +1,12 @@
 /**
  * @file python/bindings.cpp
  * @brief Python bindings for SBD TPB diagonalization using pybind11
+ *
+ * This file is compiled twice with different module names:
+ * - _core_cpu: CPU backend
+ * - _core_gpu: GPU backend (with -DSBD_THRUST)
+ *
+ * The module name is controlled by the SBD_MODULE_NAME macro.
  */
 
 #include <pybind11/pybind11.h>
@@ -25,8 +31,18 @@ MPI_Comm get_mpi_comm(py::object py_comm) {
     return *comm_ptr;
 }
 
-PYBIND11_MODULE(_core, m) {
-    m.doc() = "Python bindings for SBD (Selected Basis Diagonalization) library";
+// Module name is set by compiler flag -DSBD_MODULE_NAME=_core_cpu or _core_gpu
+#ifndef SBD_MODULE_NAME
+#define SBD_MODULE_NAME _core
+#endif
+
+PYBIND11_MODULE(SBD_MODULE_NAME, m) {
+    // Set module docstring based on backend
+#ifdef SBD_THRUST
+    m.doc() = "Python bindings for SBD (Selected Basis Diagonalization) library - GPU backend";
+#else
+    m.doc() = "Python bindings for SBD (Selected Basis Diagonalization) library - CPU backend";
+#endif
 
     // Initialize mpi4py
     if (import_mpi4py() < 0) {
