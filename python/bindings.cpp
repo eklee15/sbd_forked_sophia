@@ -147,6 +147,24 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
             // Convert MPI communicator
             MPI_Comm comm = get_mpi_comm(py_comm);
             
+            // Get MPI rank for GPU assignment
+            int mpi_rank;
+            MPI_Comm_rank(comm, &mpi_rank);
+            
+#ifdef SBD_THRUST
+            // Assign GPU device based on MPI rank
+            int numDevices, myDevice;
+#ifdef __CUDACC__
+            cudaGetDeviceCount(&numDevices);
+            myDevice = mpi_rank % numDevices;
+            cudaSetDevice(myDevice);
+#else
+            hipGetDeviceCount(&numDevices);
+            myDevice = mpi_rank % numDevices;
+            hipSetDevice(myDevice);
+#endif
+#endif
+            
             // Output variables
             double energy;
             std::vector<double> density;
@@ -200,6 +218,24 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
             
             // Convert MPI communicator
             MPI_Comm comm = get_mpi_comm(py_comm);
+            
+            // Get MPI rank for GPU assignment
+            int mpi_rank;
+            MPI_Comm_rank(comm, &mpi_rank);
+            
+#ifdef SBD_THRUST
+            // Assign GPU device based on MPI rank
+            int numDevices, myDevice;
+#ifdef __CUDACC__
+            cudaGetDeviceCount(&numDevices);
+            myDevice = mpi_rank % numDevices;
+            cudaSetDevice(myDevice);
+#else
+            hipGetDeviceCount(&numDevices);
+            myDevice = mpi_rank % numDevices;
+            hipSetDevice(myDevice);
+#endif
+#endif
             
             // Output variables
             double energy;

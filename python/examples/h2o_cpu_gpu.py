@@ -65,6 +65,21 @@ def parse_args():
         default=0,
         help='Calculate RDM (0=no, 1=yes)'
     )
+    parser.add_argument(
+        '--adet_comm_size',
+        type=int,
+        default=1
+    )
+    parser.add_argument(
+        '--bdet_comm_size',
+        type=int,
+        default=1
+    )
+    parser.add_argument(
+        '--task_comm_size',
+        type=int,
+        default=1
+    )
     
     return parser.parse_args()
 
@@ -100,6 +115,9 @@ def main():
     config.eps = args.tolerance
     config.method = 0  # Davidson
     config.do_rdm = args.rdm  # Density only
+    config.adet_comm_size = args.adet_comm_size
+    config.bdet_comm_size = args.bdet_comm_size
+    config.task_comm_size = args.task_comm_size
     
     # GPU-specific settings (only used if GPU backend is active)
     if sbd.get_backend() == 'gpu':
@@ -148,7 +166,8 @@ def main():
             print(f"Backend: {sbd.get_backend().upper()}")
             print(f"Ground state energy: {results['energy']:.10f}")
             print(f"Density (first 10): {results['density'][:10]}")
-            print(f"Number of carryover determinants: {len(results['co_adet'])}")
+            #print(f"Number of carryover determinants: {len(results['co_adet'])}")
+            print(f"Number of carryover determinants: {len(results['carryover_adet'])}")
             print("="*70)
             print()
             

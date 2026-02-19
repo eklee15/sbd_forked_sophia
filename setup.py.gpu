@@ -1,10 +1,6 @@
 """
 Setup script for SBD Python bindings
 """
-# /mnt/data/myenv/lib/python3.11/site-packages/mpi4py/include
-# /opt/ohpc/pub/mpi/openmpi5-gnu13/5.0.5/include
-# -L/opt/ohpc/pub/libs/gnu14/openblas/0.3.29/lib -lopenblas
-
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 import sys
@@ -17,48 +13,128 @@ class get_pybind_include(object):
     def __str__(self):
         return pybind11.get_include()
 
-def get_mpi_flags():
-    """Get MPI compiler and linker flags"""
+def get_mpi4py_include():
+    """Get mpi4py include path"""
     try:
-        # Try to get MPI compile flags
-        compile_flags = subprocess.check_output(['mpicc', '--showme:compile'],
+        import mpi4py
+        return mpi4py.get_include()
+    except (ImportError, AttributeError):
+        # Fallback: try to find it in site-packages
+        import site
+        for site_dir in site.getsitepackages():
+            mpi4py_inc = os.path.join(site_dir, 'mpi4py', 'include')
+            if os.path.exists(mpi4py_inc):
+                return mpi4py_inc
+        return None
+
+def get_mpi_config():
+    """Get MPI configuration from MPI_HOME or mpicc"""
+    mpi_home = os.environ.get('MPI_HOME', None)
+    
+    if mpi_home:
+        # Use MPI_HOME if provided (important for CUDA-aware MPI)
+        mpi_include = os.path.join(mpi_home, 'include')
+        mpi_lib = os.path.join(mpi_home, 'lib')
+        print(f"Using MPI from MPI_HOME: {mpi_home}")
+        return [mpi_include], [mpi_lib], ['mpi']
+    else:
+        # Try to detect from mpicc
+        try:
+            compile_flags = subprocess.check_output(['mpicc', '--showme:compile'],
+                                                    universal_newlines=True).strip().split()
+            link_flags = subprocess.check_output(['mpicc', '--showme:link'],
                                                 universal_newlines=True).strip().split()
-        link_flags = subprocess.check_output(['mpicc', '--showme:link'],
-                                            universal_newlines=True).strip().split()
-        
-        include_dirs = [flag[2:] for flag in compile_flags if flag.startswith('-I')]
-        library_dirs = [flag[2:] for flag in link_flags if flag.startswith('-L')]
-        libraries = [flag[2:] for flag in link_flags if flag.startswith('-l')]
-        extra_link = [flag for flag in link_flags if not flag.startswith('-l') and not flag.startswith('-L')]
-        
-        return include_dirs, library_dirs, libraries, extra_link
-    except:
-        # Fallback to environment variable or default
-        mpi_include = os.environ.get('MPI_INCLUDE_PATH', '/usr/include/mpi')
-        return [mpi_include], [], ['mpi'], []
+            
+            include_dirs = [flag[2:] for flag in compile_flags if flag.startswith('-I')]
+            library_dirs = [flag[2:] for flag in link_flags if flag.startswith('-L')]
+            libraries = [flag[2:] for flag in link_flags if flag.startswith('-l')]
+            
+            print("Using MPI detected from mpicc")
+            return include_dirs, library_dirs, libraries
+        except Exception as e:
+            print(f"Error: Could not detect MPI. Please set MPI_HOME environment variable.")
+            print(f"For GPU backend, CUDA-aware MPI is recommended.")
+            print(f"Error details: {e}")
+            sys.exit(1)
 
 # Get MPI configuration
-mpi_includes, mpi_lib_dirs, mpi_libs, mpi_link_flags = get_mpi_flags()
+mpi_includes, mpi_lib_dirs, mpi_libs = get_mpi_config()
 
-# Get MPI include path from environment or use detected
-if 'MPI_INCLUDE_PATH' in os.environ:
-    mpi_includes = [os.environ['MPI_INCLUDE_PATH']]
+# Get mpi4py include path
+mpi4py_inc = get_mpi4py_include()
+if not mpi4py_inc:
+    print("Warning: Could not find mpi4py include path")
 
 # Build include directories
-include_dirs = [get_pybind_include(), 'include', '/opt/ohpc/pub/mpi/openmpi5-gnu13/5.0.5/include', '/mnt/data/myenv/lib/python3.11/site-packages/mpi4py/include',] + mpi_includes 
+include_dirs = [get_pybind_include(), 'include'] + mpi_includes
+if mpi4py_inc:
+    include_dirs.append(mpi4py_inc)
 
 # Build library directories
-library_dirs = mpi_lib_dirs + ["/opt/ohpc/pub/libs/gnu14/openblas/0.3.29/lib", "/opt/ohpc/pub/mpi/openmpi5-gnu13/5.0.5/lib"]
+library_dirs = mpi_lib_dirs.copy()
 
-# Build libraries list - use MPI libs + standard math libs
-libraries = mpi_libs + ['openblas']
+# Add BLAS library path
+blas_lib_path = os.environ.get('BLAS_LIB_PATH', None)
+if blas_lib_path:
+    library_dirs.append(blas_lib_path)
+    print(f"Using BLAS from: {blas_lib_path}")
+else:
+    print("Warning: BLAS_LIB_PATH not set. Assuming BLAS is in system path.")
 
-# Build extra link args
-#extra_link_args = ['-fopenmp'] + mpi_link_flags
+# Get BLAS library names (can be openblas, blas+lapack, mkl, etc.)
+blas_libs = os.environ.get('BLAS_LIBS', 'openblas').split(',')
+print(f"Using BLAS libraries: {blas_libs}")
+
+# Build libraries list
+libraries = mpi_libs + blas_libs
+
+# Build extra link args with RPATH
 extra_link_args = ['-fopenmp']
 
-os.environ["CC"] = "nvc++"
-os.environ["CXX"] = "nvc++"
+# Add RPATH so libraries can be found at runtime without LD_LIBRARY_PATH
+for lib_dir in library_dirs:
+    extra_link_args.append(f'-Wl,--rpath,{lib_dir}')
+
+print(f"RPATH will be set to: {library_dirs}")
+
+# Detect NVIDIA HPC SDK compilers
+def find_nvidia_hpc_sdk():
+    """Find NVIDIA HPC SDK compilers (nvc/nvc++) and add to PATH if needed"""
+    nvhpc_home = os.environ.get('NVHPC_HOME', None)
+
+    if nvhpc_home:
+        # Check if nvc++ exists in NVHPC_HOME
+        nvcxx_path = os.path.join(nvhpc_home, 'bin', 'nvc++')
+        if os.path.exists(nvcxx_path):
+            print(f"Found NVIDIA HPC SDK at: {nvhpc_home}")
+            # Add bin directory to PATH so compiler can be found
+            nvhpc_bin = os.path.join(nvhpc_home, 'bin')
+            current_path = os.environ.get('PATH', '')
+            if nvhpc_bin not in current_path:
+                os.environ['PATH'] = f"{nvhpc_bin}:{current_path}"
+                print(f"Added {nvhpc_bin} to PATH")
+            return nvcxx_path
+        else:
+            print(f"Warning: NVHPC_HOME set to {nvhpc_home} but nvc++ not found")
+
+    # Try to find nvc++ in PATH
+    import shutil
+    nvcxx_path = shutil.which('nvc++')
+    if nvcxx_path:
+        print(f"Found nvc++ in PATH: {nvcxx_path}")
+        return nvcxx_path
+
+    # Fallback to g++ with warning
+    print("Warning: NVIDIA HPC SDK (nvc++) not found. Falling back to g++")
+    print("For GPU backend, set NVHPC_HOME or ensure nvc++ is in PATH")
+    return 'g++'
+
+# Set compilers
+compiler = find_nvidia_hpc_sdk()
+print(f"Using compiler: {compiler}")
+os.environ["CC"] = compiler
+os.environ["CXX"] = compiler
+
 #os.environ["LDSHARED"] = "nvc++ -shared"
 
 
@@ -115,7 +191,7 @@ ext_modules = [
             "-gpu=sm_90",
             "-DSBD_MODULE_NAME=_core_gpu"   
         ],
-        extra_link_args=["-fopenmp", "-mp", "-cuda", "-cudalib"],
+        extra_link_args=extra_link_args + ["-fopenmp", "-mp", "-cuda", "-cudalib"],
     ),
 ]
 
