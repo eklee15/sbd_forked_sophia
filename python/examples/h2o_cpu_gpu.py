@@ -91,7 +91,7 @@ def parse_args():
     # GPU-specific options (only used with GPU backend)
     parser.add_argument('--use_precalculated_dets', type=int, default=1, choices=[0, 1],
                        help='Use precalculated determinants (GPU only)')
-    parser.add_argument('--max_memory_gb_for_determinants', '--gpu-memory', type=float, default=-1.0,
+    parser.add_argument('--max_memory_gb_for_determinants', '--gpu-memory', type=int, default=-1,
                        dest='max_memory_gb_for_determinants',
                        help='Maximum GPU memory in GB for determinants (-1=auto, GPU only)')
     
