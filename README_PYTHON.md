@@ -1,54 +1,162 @@
 # SBD Python Bindings
 
-Python bindings for the SBD (Selected Basis Diagonalization) library, providing access to Tensor Product Basis (TPB) diagonalization functionality.
+Python bindings for the Selected Basis Diagonalization (SBD) library with dual CPU/GPU backend support.
+
+## Table of Contents
+- [Overview](#overview)
+- [Features](#features)
+- [Installation](#installation)
+- [Backend Architecture](#backend-architecture)
+- [Usage](#usage)
+- [Examples](#examples)
+- [API Reference](#api-reference)
+
+## Overview
+
+SBD (Selected Basis Diagonalization) is a high-performance library for quantum chemistry calculations. The Python bindings provide easy access to SBD's capabilities with support for both CPU and GPU backends.
+
+**Key Features:**
+- Dual backend support (CPU and GPU)
+- Automatic backend detection and building
+- Runtime backend selection
+- MPI parallelization
+- OpenMP threading (CPU) / CUDA acceleration (GPU)
 
 ## Features
 
-- **Two API styles**: File-based (convenient) and data structure-based (flexible)
-- **MPI parallelization**: Full support via mpi4py
-- **Complete TPB functionality**: Access to all configuration parameters
-- **Efficient**: Minimal Python overhead, GIL released during computation
-- **Type-safe**: Proper Python type hints and error handling
+### Dual Backend Support
+- **CPU Backend** (`_core_cpu.so`): OpenMP-parallelized, works on any system
+- **GPU Backend** (`_core_gpu.so`): CUDA-accelerated, requires NVIDIA GPUs and HPC SDK
+- **Automatic Building**: Detects GPU availability and builds both backends when possible
+- **Runtime Selection**: Choose backend via environment variable or Python API
+
+### Computational Methods
+- Two-Particle Basis (TPB) diagonalization
+- Davidson and Lanczos iterative methods
+- Reduced density matrix (RDM) calculations
+- Carryover determinant selection
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.7 or later
-- C++17 compatible compiler
-- MPI implementation (OpenMPI, MPICH, or Intel MPI)
-- BLAS/LAPACK libraries
-- pybind11 (≥2.6.0)
-- mpi4py (≥3.0.0)
-- numpy (≥1.19.0)
+**Required:**
+- Python 3.7+
+- MPI implementation (OpenMPI, MPICH, etc.)
+- BLAS library (OpenBLAS, MKL, etc.)
+- pybind11
+- mpi4py
+- numpy
 
-### Building from Source
+**Optional (for GPU backend):**
+- NVIDIA HPC SDK (nvc++ compiler)
+- CUDA-capable GPU
+- CUDA-aware MPI (recommended)
 
-```bash
-cd /path/to/sbd
+### Environment Variables
 
-# Install dependencies
-pip install pybind11 mpi4py numpy
-
-# Build and install
-pip install -e .
-
-# Or for development
-python setup.py build_ext --inplace
-```
-
-### Setting MPI Include Path
-
-If MPI headers are not in the default location:
+Set these before installation:
 
 ```bash
-export MPI_INCLUDE_PATH=/path/to/mpi/include
+# MPI configuration
+export MPI_HOME=/path/to/mpi
+
+# BLAS configuration
+export BLAS_LIB_PATH=/path/to/blas/lib
+export BLAS_LIBS=openblas  # or mkl_rt, blas,lapack, etc.
+
+# GPU configuration (optional)
+export NVHPC_HOME=/opt/nvidia/hpc_sdk/Linux_x86_64/2025/compilers
+```
+
+### Installation Methods
+
+#### Method 1: Auto-detect (Recommended)
+
+Automatically builds both CPU and GPU backends if GPU support is detected:
+
+```bash
 pip install -e .
 ```
 
-## Quick Start
+This will:
+- Always build CPU backend
+- Build GPU backend if NVIDIA HPC SDK and CUDA GPU are detected
+- Set RPATH for runtime library discovery (no LD_LIBRARY_PATH needed)
 
-### Example 1: File-Based API (Recommended)
+#### Method 2: Force Specific Backend
+
+Build only CPU backend:
+```bash
+SBD_BUILD_BACKEND=cpu pip install -e .
+```
+
+Build only GPU backend:
+```bash
+SBD_BUILD_BACKEND=gpu pip install -e .
+```
+
+Force build both:
+```bash
+SBD_BUILD_BACKEND=both pip install -e .
+```
+
+### Verification
+
+Check which backends were built:
+
+```bash
+python -c "import sbd; print(f'Available backends: {sbd.available_backends()}')"
+```
+
+Expected output:
+- CPU only: `Available backends: ['cpu']`
+- Both: `Available backends: ['cpu', 'gpu']`
+
+## Backend Architecture
+
+### Design Philosophy
+
+The dual backend architecture allows:
+1. **Single Installation**: One `pip install` gets both backends
+2. **No Symbol Collision**: Separate `.so` files (`_core_cpu.so`, `_core_gpu.so`)
+3. **Runtime Selection**: Choose backend when running, not when building
+4. **Automatic GPU Assignment**: Each MPI rank assigned to different GPU
+
+### Backend Selection
+
+The Python `__init__.py` dynamically loads the appropriate backend:
+
+```python
+import os
+os.environ['SBD_BACKEND'] = 'gpu'  # Must be set BEFORE import
+import sbd
+```
+
+Or use command-line:
+```bash
+SBD_BACKEND=gpu python script.py
+```
+
+### GPU Device Assignment
+
+When using GPU backend with MPI:
+- Each MPI rank automatically assigned to a GPU
+- Assignment: `gpu_id = mpi_rank % num_gpus`
+- Example: 8 ranks on 8 GPUs → each rank gets dedicated GPU
+- Example: 16 ranks on 8 GPUs → 2 ranks per GPU
+
+This is handled automatically in `bindings.cpp`:
+```cpp
+int mpi_rank;
+MPI_Comm_rank(comm, &mpi_rank);
+int myDevice = mpi_rank % numDevices;
+cudaSetDevice(myDevice);
+```
+
+## Usage
+
+### Basic Example
 
 ```python
 from mpi4py import MPI
@@ -61,7 +169,7 @@ comm = MPI.COMM_WORLD
 config = sbd.TPB_SBD()
 config.max_it = 100
 config.eps = 1e-6
-config.do_rdm = 0  # 0=density only, 1=full RDM
+config.bit_length = 20
 
 # Run diagonalization
 results = sbd.tpb_diag_from_files(
@@ -72,239 +180,209 @@ results = sbd.tpb_diag_from_files(
 )
 
 # Access results
-if comm.Get_rank() == 0:
-    print(f"Energy: {results['energy']}")
-    print(f"Density: {results['density']}")
+energy = results['energy']
+density = results['density']
 ```
 
-### Example 2: Data Structure API (More Flexible)
+### Backend Selection
 
 ```python
-from mpi4py import MPI
+import os
+
+# Set backend before importing sbd
+os.environ['SBD_BACKEND'] = 'gpu'  # or 'cpu'
+
 import sbd
 
-comm = MPI.COMM_WORLD
-
-# Load data
-fcidump = sbd.LoadFCIDump("fcidump.txt")
-alpha_dets = sbd.LoadAlphaDets("alphadets.txt", bit_length=20, total_bit_length=36)
-
-# Configure
-config = sbd.TPB_SBD()
-config.max_it = 100
-config.eps = 1e-6
-
-# Run diagonalization
-results = sbd.tpb_diag(
-    comm=comm,
-    sbd_data=config,
-    fcidump=fcidump,
-    adet=alpha_dets,
-    bdet=alpha_dets,  # Use same for closed shell
-    loadname="",
-    savename="wavefunction.dat"
-)
-
-if comm.Get_rank() == 0:
-    print(f"Energy: {results['energy']}")
+# Verify backend
+print(f"Using backend: {sbd.get_backend()}")
 ```
 
-## API Reference
+### MPI Configuration
 
-### Classes
+Configure MPI communicator decomposition:
 
-#### `TPB_SBD`
+```python
+config = sbd.TPB_SBD()
+config.adet_comm_size = 2  # Alpha determinant parallelization
+config.bdet_comm_size = 2  # Beta determinant parallelization  
+config.task_comm_size = 2  # Task parallelization
 
-Configuration for TPB diagonalization.
-
-**Attributes:**
-- `task_comm_size` (int): Task communicator size (default: 1)
-- `adet_comm_size` (int): Alpha determinant communicator size (default: 1)
-- `bdet_comm_size` (int): Beta determinant communicator size (default: 1)
-- `h_comm_size` (int): Helper communicator size (default: 1)
-- `method` (int): Diagonalization method (default: 0)
-  - 0: Davidson without storing Hamiltonian
-  - 1: Davidson with storing Hamiltonian
-  - 2: Lanczos without storing Hamiltonian
-  - 3: Lanczos with storing Hamiltonian
-- `max_it` (int): Maximum iterations (default: 1)
-- `max_nb` (int): Maximum basis vectors (default: 10)
-- `eps` (float): Convergence tolerance (default: 1e-4)
-- `max_time` (float): Maximum time in seconds (default: 86400)
-- `init` (int): Initialization method (default: 0)
-- `do_shuffle` (int): Shuffle determinants flag (default: 0)
-- `do_rdm` (int): Calculate RDM (0=density only, 1=full RDM) (default: 0)
-- `carryover_type` (int): Carryover selection type (default: 0)
-- `ratio` (float): Carryover ratio (default: 0.0)
-- `threshold` (float): Carryover threshold (default: 0.01)
-- `bit_length` (size_t): Bit length for determinants (default: 20)
-- `dump_matrix_form_wf` (str): Filename to dump wavefunction (default: "")
-
-#### `FCIDump`
-
-FCIDUMP data structure.
-
-**Attributes:**
-- `header` (dict[str, str]): Header information
-- `one_electron_integrals`: One-electron integrals
-- `two_electron_integrals`: Two-electron integrals
-
-### Functions
-
-#### `LoadFCIDump(filename: str) -> FCIDump`
-
-Load FCIDUMP file.
-
-**Parameters:**
-- `filename`: Path to FCIDUMP file
-
-**Returns:**
-- FCIDump object
-
-#### `LoadAlphaDets(filename: str, bit_length: int, total_bit_length: int) -> list[list[int]]`
-
-Load alpha determinants from file.
-
-**Parameters:**
-- `filename`: Path to determinants file
-- `bit_length`: Bit length for each word
-- `total_bit_length`: Total number of orbitals
-
-**Returns:**
-- List of determinants (each determinant is a list of integers)
-
-#### `makestring(config: list[int], bit_length: int, total_bit_length: int) -> str`
-
-Convert bitstring to string representation.
-
-**Parameters:**
-- `config`: Bitstring as list of integers
-- `bit_length`: Bit length for each word
-- `total_bit_length`: Total number of orbitals
-
-**Returns:**
-- String representation
-
-#### `tpb_diag(comm, sbd_data, fcidump, adet, bdet, loadname="", savename="") -> dict`
-
-Perform TPB diagonalization with pre-loaded data structures.
-
-**Parameters:**
-- `comm` (MPI.Comm): MPI communicator
-- `sbd_data` (TPB_SBD): Configuration object
-- `fcidump` (FCIDump): FCIDUMP data
-- `adet` (list[list[int]]): Alpha determinants
-- `bdet` (list[list[int]]): Beta determinants
-- `loadname` (str): Load wavefunction from file (optional)
-- `savename` (str): Save wavefunction to file (optional)
-
-**Returns:**
-- Dictionary with keys:
-  - `energy` (float): Ground state energy
-  - `density` (list[float]): Orbital densities
-  - `carryover_adet` (list[list[int]]): Important alpha determinants
-  - `carryover_bdet` (list[list[int]]): Important beta determinants
-  - `one_p_rdm` (list[list[float]]): 1-particle RDM (if do_rdm=1)
-  - `two_p_rdm` (list[list[float]]): 2-particle RDM (if do_rdm=1)
-
-#### `tpb_diag_from_files(comm, sbd_data, fcidumpfile, adetfile, loadname="", savename="") -> dict`
-
-Perform TPB diagonalization from files (convenience function).
-
-**Parameters:**
-- `comm` (MPI.Comm): MPI communicator
-- `sbd_data` (TPB_SBD): Configuration object
-- `fcidumpfile` (str): Path to FCIDUMP file
-- `adetfile` (str): Path to determinants file
-- `loadname` (str): Load wavefunction from file (optional)
-- `savename` (str): Save wavefunction to file (optional)
-
-**Returns:**
-- Same dictionary as `tpb_diag`
-
-## Running with MPI
-
-```bash
-# Single process
-python script.py
-
-# Multiple processes
-mpirun -np 4 python script.py
-
-# With specific MPI implementation
-mpiexec -n 8 python script.py
+# Total MPI ranks = 2 × 2 × 2 = 8
 ```
 
 ## Examples
 
-See the `python/examples/` directory for complete examples:
-- `simple_h2o.py`: Basic H2O calculation
+### H2O Calculation
 
-## Testing
+Located in `python/examples/h2o_cpu_gpu.py`
 
+**CPU Backend:**
 ```bash
-# Run basic tests
-cd python/tests
-python test_basic.py
+mpirun -np 8 -x OMP_NUM_THREADS=4 python h2o_cpu_gpu.py \
+    --device cpu \
+    --adet_comm_size 2 \
+    --bdet_comm_size 2 \
+    --task_comm_size 2 \
+    --adetfile ../../data/h2o/h2o-1em4-alpha.txt \
+    --tolerance 1e-4
+```
 
-# Run integration tests with MPI
-mpirun -np 4 python test_h2o.py
+**GPU Backend:**
+```bash
+mpirun -np 8 python h2o_cpu_gpu.py \
+    --device gpu \
+    --adet_comm_size 2 \
+    --bdet_comm_size 2 \
+    --task_comm_size 2 \
+    --adetfile ../../data/h2o/h2o-1em4-alpha.txt \
+    --tolerance 1e-4
+```
+
+**Expected Result:** Ground state energy ≈ -76.236 Hartree
+
+See `python/examples/README.md` for detailed usage.
+
+## API Reference
+
+### Configuration Object
+
+```python
+config = sbd.TPB_SBD()
+```
+
+**Attributes:**
+- `max_it` (int): Maximum iterations (default: 1)
+- `eps` (float): Convergence tolerance (default: 1e-4)
+- `method` (int): Diagonalization method (0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham)
+- `do_rdm` (int): Calculate RDM (0=density only, 1=full RDM)
+- `bit_length` (int): Bit length for determinants (default: 20)
+- `adet_comm_size` (int): Alpha determinant communicator size
+- `bdet_comm_size` (int): Beta determinant communicator size
+- `task_comm_size` (int): Task communicator size
+
+### Main Functions
+
+#### tpb_diag_from_files
+```python
+results = sbd.tpb_diag_from_files(
+    comm,              # MPI communicator
+    sbd_data,          # TPB_SBD configuration
+    fcidumpfile,       # Path to FCIDUMP file
+    adetfile,          # Path to alpha determinants
+    loadname="",       # Load initial wavefunction (optional)
+    savename=""        # Save final wavefunction (optional)
+)
+```
+
+**Returns:** Dictionary with keys:
+- `energy` (float): Ground state energy
+- `density` (list): Orbital densities
+- `carryover_adet` (list): Carryover alpha determinants
+- `carryover_bdet` (list): Carryover beta determinants
+- `one_p_rdm` (list): 1-particle RDM (if do_rdm=1)
+- `two_p_rdm` (list): 2-particle RDM (if do_rdm=1)
+
+#### tpb_diag
+```python
+results = sbd.tpb_diag(
+    comm,              # MPI communicator
+    sbd_data,          # TPB_SBD configuration
+    fcidump,           # FCIDump object
+    adet,              # Alpha determinants (list of lists)
+    bdet,              # Beta determinants (list of lists)
+    loadname="",       # Load initial wavefunction (optional)
+    savename=""        # Save final wavefunction (optional)
+)
+```
+
+### Utility Functions
+
+```python
+# Load FCIDUMP file
+fcidump = sbd.LoadFCIDump("fcidump.txt")
+
+# Load determinants
+dets = sbd.LoadAlphaDets("alphadets.txt", bit_length=20, total_bit_length=26)
+
+# Convert determinant to string
+string = sbd.makestring(det, bit_length=20, total_bit_length=26)
+
+# Backend information
+backend = sbd.get_backend()           # Returns 'cpu' or 'gpu'
+backends = sbd.available_backends()   # Returns list of available backends
+sbd.print_backend_info()              # Prints backend information
 ```
 
 ## Troubleshooting
 
-### Import Error: "No module named 'sbd'"
+### Import Errors
 
-Make sure the module is built and installed:
+**Problem:** `ImportError: cannot import name '_core_cpu'`
+
+**Solution:** Backend not built. Check installation:
 ```bash
-pip install -e .
+ls python/sbd/_core_*.so
+pip install -e . -v  # Verbose output
 ```
 
-### MPI Import Error
+### GPU Backend Not Building
 
-Install mpi4py with the same MPI implementation:
-```bash
-pip install mpi4py --no-binary mpi4py
-```
+**Problem:** Only CPU backend built despite having GPU
 
-### Compilation Errors
+**Solutions:**
+1. Check NVIDIA HPC SDK: `which nvc++`
+2. Set NVHPC_HOME: `export NVHPC_HOME=/path/to/hpc_sdk/compilers`
+3. Force GPU build: `SBD_BUILD_BACKEND=gpu pip install -e .`
 
-Check that you have:
-- C++17 compatible compiler
-- MPI headers installed
-- BLAS/LAPACK libraries installed
+### MPI Errors
 
-Set the MPI include path if needed:
-```bash
-export MPI_INCLUDE_PATH=/usr/include/mpi
-```
+**Problem:** MPI-related errors during runtime
 
-### Runtime Errors
+**Solutions:**
+1. Ensure MPI_HOME is set correctly
+2. Check mpi4py: `python -c "from mpi4py import MPI; print(MPI.Get_version())"`
+3. Use correct mpirun: `$MPI_HOME/bin/mpirun`
 
-Make sure all MPI processes can access the input files and have write permissions for output files.
+### Symbol Collision
+
+**Problem:** CPU code runs on GPU or vice versa
+
+**Solution:** This was an issue in older versions. Current version uses separate `.so` files to prevent symbol collision. Ensure you have the latest code.
 
 ## Performance Tips
 
-1. **Use file-based API** for convenience unless you need to manipulate data
-2. **Set appropriate MPI decomposition** via `adet_comm_size` and `bdet_comm_size`
-3. **Disable RDM calculation** (`do_rdm=0`) if not needed - significantly faster
-4. **Use method=0** (Davidson without storing) for large systems
-5. **Adjust convergence tolerance** (`eps`) based on accuracy needs
+### CPU Backend
+- Set `OMP_NUM_THREADS` to number of cores per MPI rank
+- Use fewer MPI ranks with more threads for memory-bound problems
+- Example: 8 ranks × 4 threads = 32 cores
 
-## Citation
+### GPU Backend
+- One MPI rank per GPU is optimal
+- Set `OMP_NUM_THREADS=1` (GPU does the work)
+- Ensure CUDA-aware MPI for best performance
+- Example: 8 ranks on 8 GPUs
 
-If you use this software in your research, please cite:
+### MPI Decomposition
+- Balance `adet_comm_size`, `bdet_comm_size`, `task_comm_size`
+- Total ranks = product of three sizes
+- Larger problems benefit from more parallelization
 
-```
-[Add citation information here]
-```
+## Contributing
+
+See main repository for contribution guidelines.
 
 ## License
 
-[Add license information here]
+See LICENSE.txt
 
-## Support
+## Citation
 
-For issues and questions:
-- GitHub Issues: [repository URL]
-- Email: [contact email]
+If you use SBD in your research, please cite:
+[Citation information to be added]
+
+---
+
+**Repository:** https://github.com/hfwen0502/sbd  
+**Branch:** cpu-gpu-backend (dual backend support)  
+**Main Branch:** main (CPU only, stable)
