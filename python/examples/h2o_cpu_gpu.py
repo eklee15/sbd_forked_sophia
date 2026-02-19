@@ -216,7 +216,7 @@ def main():
         )
         
         if rank == 0:
-            print("="*90)
+            print("="*70)
             print("Results")
             print("="*90)
             print(f"Backend: {sbd.get_backend().upper()}")
