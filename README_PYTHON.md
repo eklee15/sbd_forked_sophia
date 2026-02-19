@@ -13,9 +13,12 @@ Python bindings for the Selected Basis Diagonalization (SBD) library with dual C
 
 ## Overview
 
-SBD (Selected Basis Diagonalization) is a high-performance library for quantum chemistry calculations. The Python bindings provide easy access to SBD's capabilities with support for both CPU and GPU backends.
+SBD (Selected Basis Diagonalization) is a high-performance library for quantum chemistry calculations. The Python bindings provide easy access to SBD's **Two-Particle Basis (TPB)** diagonalization method with support for both CPU and GPU backends.
+
+**Important Note:** The Python bindings currently support only the **TPB (Two-Particle Basis)** method for quantum chemistry calculations. The SBD library also includes other methods (CAOP for general operators, GDB for general determinant basis) which are available through C++ CLI applications in the `/apps` directory but not yet exposed in Python bindings.
 
 **Key Features:**
+- **TPB diagonalization** for quantum chemistry Hamiltonians
 - Dual backend support (CPU and GPU)
 - Automatic backend detection and building
 - Runtime backend selection
@@ -30,11 +33,21 @@ SBD (Selected Basis Diagonalization) is a high-performance library for quantum c
 - **Automatic Building**: Detects GPU availability and builds both backends when possible
 - **Runtime Selection**: Choose backend via environment variable or Python API
 
-### Computational Methods
+### Computational Methods (TPB Focus)
+
+The Python bindings expose the **Two-Particle Basis (TPB)** method, which is specifically designed for quantum chemistry calculations where the Hamiltonian is expressed in a tensor-product basis of alpha and beta determinants.
+
+**Available in Python:**
 - Two-Particle Basis (TPB) diagonalization
 - Davidson and Lanczos iterative methods
 - Reduced density matrix (RDM) calculations
 - Carryover determinant selection
+
+**Other SBD Methods (C++ only):**
+- CAOP: Creation/Annihilation Operator basis (see `/apps/caop_selected_basis_diagonalization`)
+- GDB: General Determinant Basis (see `/apps/chemistry_gdb_selected_basis_diagonalization`)
+
+For non-TPB methods, please use the C++ CLI applications directly.
 
 ## Installation
 
@@ -215,9 +228,9 @@ config.task_comm_size = 2  # Task parallelization
 
 ### H2O Calculation
 
-Located in `python/examples/h2o_cpu_gpu.py`
+Located in `python/examples/h2o_cpu_gpu.py` - Comprehensive example with full command-line control over all TPB_SBD parameters.
 
-**CPU Backend:**
+**Basic CPU Backend:**
 ```bash
 mpirun -np 8 -x OMP_NUM_THREADS=4 python h2o_cpu_gpu.py \
     --device cpu \
@@ -225,10 +238,10 @@ mpirun -np 8 -x OMP_NUM_THREADS=4 python h2o_cpu_gpu.py \
     --bdet_comm_size 2 \
     --task_comm_size 2 \
     --adetfile ../../data/h2o/h2o-1em4-alpha.txt \
-    --tolerance 1e-4
+    --eps 1e-4
 ```
 
-**GPU Backend:**
+**Basic GPU Backend:**
 ```bash
 mpirun -np 8 python h2o_cpu_gpu.py \
     --device gpu \
@@ -236,12 +249,79 @@ mpirun -np 8 python h2o_cpu_gpu.py \
     --bdet_comm_size 2 \
     --task_comm_size 2 \
     --adetfile ../../data/h2o/h2o-1em4-alpha.txt \
-    --tolerance 1e-4
+    --eps 1e-4
 ```
+
+**Advanced Usage with All Options:**
+```bash
+mpirun -np 8 python h2o_cpu_gpu.py \
+    --device gpu \
+    --method 0 \
+    --max_it 100 \
+    --max_nb 20 \
+    --eps 1e-6 \
+    --max_time 3600 \
+    --adet_comm_size 2 \
+    --bdet_comm_size 2 \
+    --task_comm_size 2 \
+    --bit_length 20 \
+    --do_rdm 1 \
+    --carryover_type 1 \
+    --ratio 0.1 \
+    --threshold 1e-5 \
+    --savename h2o_wf.dat \
+    --adetfile ../../data/h2o/h2o-1em4-alpha.txt \
+    --max_memory_gb_for_determinants 16
+```
+
+**Available Command-Line Options:**
+
+All TPB_SBD parameters are configurable via command-line:
+
+- **Device Selection:**
+  - `--device {auto,cpu,gpu}` - Backend selection (default: auto)
+
+- **Input Files:**
+  - `--fcidump FILE` - FCIDUMP file path
+  - `--adetfile FILE` - Alpha determinants file
+  - `--bdetfile FILE` - Beta determinants file (optional)
+  - `--loadname FILE` - Load initial wavefunction
+  - `--savename FILE` - Save final wavefunction
+
+- **MPI Configuration:**
+  - `--task_comm_size N` - Task communicator size
+  - `--adet_comm_size N` - Alpha determinant communicator size
+  - `--bdet_comm_size N` - Beta determinant communicator size
+  - `--h_comm_size N` - Helper communicator size
+
+- **Diagonalization Method:**
+  - `--method {0,1,2,3}` - 0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham
+  - `--max_it N` - Maximum iterations (default: 100)
+  - `--max_nb N` - Maximum basis vectors (default: 10)
+  - `--eps FLOAT` - Convergence tolerance (default: 1e-3)
+  - `--max_time SECONDS` - Maximum time limit
+
+- **Options:**
+  - `--init N` - Initialization method
+  - `--do_shuffle {0,1}` - Shuffle determinants
+  - `--do_rdm {0,1}` - Calculate RDM (0=density only, 1=full RDM)
+  - `--bit_length N` - Bit length for determinants (default: 20)
+
+- **Carryover Selection:**
+  - `--carryover_type N` - Carryover determinant selection type
+  - `--ratio FLOAT` - Carryover ratio
+  - `--threshold FLOAT` - Carryover threshold
+
+- **Output:**
+  - `--dump_matrix_form_wf FILE` - Dump wavefunction in matrix form
+
+- **GPU-Specific:**
+  - `--use_precalculated_dets {0,1}` - Use precalculated determinants
+  - `--max_memory_gb_for_determinants GB` - Max GPU memory (-1=auto)
 
 **Expected Result:** Ground state energy ≈ -76.236 Hartree
 
-See `python/examples/README.md` for detailed usage.
+See `python/examples/README.md` for more details and `python h2o_cpu_gpu.py --help` for full option list.
 
 ## API Reference
 
