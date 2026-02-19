@@ -317,7 +317,7 @@ All TPB_SBD parameters are configurable via command-line:
 
 - **GPU-Specific:**
   - `--use_precalculated_dets {0,1}` - Use precalculated determinants
-  - `--max_memory_gb_for_determinants GB` - Max GPU memory (-1=auto)
+  - `--max_memory_gb_for_determinants N` - Max GPU memory in GB, integer (-1=auto)
 
 **Expected Result:** Ground state energy ≈ -76.236 Hartree
 

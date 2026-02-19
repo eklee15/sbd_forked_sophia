@@ -86,7 +86,7 @@ Run `python h2o_cpu_gpu.py --help` for complete list. Key options:
 
 #### GPU-Specific (only used with GPU backend)
 - `--use_precalculated_dets {0,1}` - Use precalculated determinants (default: 1)
-- `--max_memory_gb_for_determinants GB` - Max GPU memory, -1=auto (default: -1)
+- `--max_memory_gb_for_determinants N` - Max GPU memory in GB (integer), -1=auto (default: -1)
 
 ### Advanced Usage Examples
 
