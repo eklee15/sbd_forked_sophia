@@ -197,6 +197,176 @@ def finalize_mpi():
     else:
         raise RuntimeError("SBD not initialized. Call sbd.init() first.")
 
+# ============================================================================
+# MPI Communication Primitives
+# ============================================================================
+
+def _check_initialized():
+    """Check if SBD is initialized"""
+    if not _initialized:
+        raise RuntimeError(
+            "SBD not initialized. Call sbd.init() before using communication primitives."
+        )
+
+def broadcast(data, root=0):
+    """
+    Broadcast data from root rank to all other ranks.
+    
+    Similar to torch.distributed.broadcast(), this sends data from one rank
+    to all other ranks. Useful for distributing quantum samples from rank 0.
+    
+    Args:
+        data: Data to broadcast (any picklable Python object)
+        root: Source rank (default: 0)
+    
+    Returns:
+        Broadcasted data on all ranks
+    
+    Example:
+        # Rank 0 has quantum samples
+        if sbd.get_rank() == 0:
+            samples = {'bitstrings': [...], 'counts': [...]}
+        else:
+            samples = None
+        
+        # Broadcast to all ranks
+        samples = sbd.broadcast(samples, root=0)
+        # Now all ranks have the samples
+    """
+    _check_initialized()
+    data = _global_comm.bcast(data, root=root)
+    return data
+
+def gather(data, root=0):
+    """
+    Gather data from all ranks to root rank.
+    
+    Similar to torch.distributed.gather(), this collects data from all ranks
+    to a single root rank. Useful for collecting results.
+    
+    Args:
+        data: Local data from this rank
+        root: Destination rank (default: 0)
+    
+    Returns:
+        List of data from all ranks (only on root), None on other ranks
+    
+    Example:
+        local_energy = compute_local_energy()
+        all_energies = sbd.gather(local_energy, root=0)
+        
+        if sbd.get_rank() == 0:
+            avg_energy = sum(all_energies) / len(all_energies)
+    """
+    _check_initialized()
+    gathered = _global_comm.gather(data, root=root)
+    return gathered
+
+def all_gather(data):
+    """
+    Gather data from all ranks to all ranks.
+    
+    Similar to torch.distributed.all_gather(), this collects data from all
+    ranks and distributes the complete list to all ranks.
+    
+    Args:
+        data: Local data from this rank
+    
+    Returns:
+        List of data from all ranks (on all ranks)
+    
+    Example:
+        local_dets = recover_determinants()
+        all_dets = sbd.all_gather(local_dets)
+        # Now every rank has determinants from all ranks
+    """
+    _check_initialized()
+    all_data = _global_comm.allgather(data)
+    return all_data
+
+def reduce(data, op='sum', root=0):
+    """
+    Reduce data from all ranks using specified operation.
+    
+    Similar to torch.distributed.reduce(), this combines data from all ranks
+    using a reduction operation and sends result to root.
+    
+    Args:
+        data: Local data (must be numeric)
+        op: Operation ('sum', 'prod', 'max', 'min', 'avg')
+        root: Destination rank (default: 0)
+    
+    Returns:
+        Reduced result (only on root), None on other ranks
+    
+    Example:
+        local_count = len(local_determinants)
+        total_count = sbd.reduce(local_count, op='sum', root=0)
+        
+        if sbd.get_rank() == 0:
+            print(f"Total determinants: {total_count}")
+    """
+    _check_initialized()
+    
+    from mpi4py import MPI
+    
+    # Map operation names to MPI operations
+    op_map = {
+        'sum': MPI.SUM,
+        'prod': MPI.PROD,
+        'max': MPI.MAX,
+        'min': MPI.MIN,
+    }
+    
+    if op == 'avg':
+        # Average is sum divided by size
+        result = _global_comm.reduce(data, op=MPI.SUM, root=root)
+        if _global_comm.Get_rank() == root:
+            result = result / _global_comm.Get_size()
+        return result
+    elif op in op_map:
+        return _global_comm.reduce(data, op=op_map[op], root=root)
+    else:
+        raise ValueError(f"Unknown operation: {op}. Use 'sum', 'prod', 'max', 'min', or 'avg'")
+
+def all_reduce(data, op='sum'):
+    """
+    Reduce data from all ranks and distribute to all ranks.
+    
+    Similar to torch.distributed.all_reduce(), this combines data from all
+    ranks and distributes the result to all ranks.
+    
+    Args:
+        data: Local data (must be numeric)
+        op: Operation ('sum', 'prod', 'max', 'min', 'avg')
+    
+    Returns:
+        Reduced result (on all ranks)
+    
+    Example:
+        local_iterations = get_iterations()
+        avg_iterations = sbd.all_reduce(local_iterations, op='avg')
+        print(f"Rank {sbd.get_rank()}: Average iterations = {avg_iterations}")
+    """
+    _check_initialized()
+    
+    from mpi4py import MPI
+    
+    op_map = {
+        'sum': MPI.SUM,
+        'prod': MPI.PROD,
+        'max': MPI.MAX,
+        'min': MPI.MIN,
+    }
+    
+    if op == 'avg':
+        result = _global_comm.allreduce(data, op=MPI.SUM)
+        return result / _global_comm.Get_size()
+    elif op in op_map:
+        return _global_comm.allreduce(data, op=op_map[op])
+    else:
+        raise ValueError(f"Unknown operation: {op}. Use 'sum', 'prod', 'max', 'min', or 'avg'")
+
 def get_device():
     """
     Get current compute device.
@@ -514,6 +684,13 @@ __all__ = [
     'finalize',
     'finalize_mpi',
     'is_initialized',
+    
+    # MPI Communication Primitives
+    'broadcast',
+    'gather',
+    'all_gather',
+    'reduce',
+    'all_reduce',
     
     # Query functions
     'get_device',
