@@ -211,6 +211,30 @@ import sbd
 print(f"Using backend: {sbd.get_backend()}")
 ```
 
+### Resource Cleanup
+
+Always call `sbd.finalize()` to clean up resources (especially GPU memory):
+
+```python
+import sbd
+
+try:
+    sbd.init(device='gpu', comm_backend='mpi')
+    config = sbd.TPB_SBD()
+    results = sbd.tpb_diag_from_files(...)
+finally:
+    sbd.finalize()  # Cleans up GPU memory and resets state
+```
+
+**What `finalize()` does:**
+- Calls `cudaDeviceReset()` on GPU backend to free GPU memory
+- Resets internal Python state
+- Does NOT call `MPI_Finalize()` (handled automatically by mpi4py)
+
+Similar to `torch.distributed.destroy_process_group()`, this ensures proper cleanup of distributed computing resources.
+
+For advanced MPI control, see [CLEANUP_API.md](CLEANUP_API.md).
+
 ### MPI Configuration
 
 Configure MPI communicator decomposition:

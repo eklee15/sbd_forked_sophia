@@ -145,13 +145,27 @@ def finalize():
     """
     Finalize SBD and clean up internal state.
     
-    Note: This does NOT call MPI_Finalize(). MPI lifecycle is managed
-    by mpirun/mpiexec. This only cleans up SBD's internal state.
+    This function:
+    - Cleans up GPU device resources (if using GPU backend)
+    - Resets internal Python state
+    - Does NOT call MPI_Finalize() - MPI lifecycle is managed by mpi4py
     
     After calling finalize(), you can call init() again with different parameters.
+    
+    Note: Similar to torch.distributed.destroy_process_group(), this ensures
+    proper cleanup of distributed computing resources.
     """
     global _device_module, _comm_backend, _comm_module, _global_comm, _initialized
     
+    # Clean up GPU resources if using GPU backend
+    if _device_module is not None and hasattr(_device_module, 'cleanup_device'):
+        try:
+            _device_module.cleanup_device()
+        except Exception as e:
+            import warnings
+            warnings.warn(f"GPU cleanup failed: {e}")
+    
+    # Reset Python state
     _device_module = None
     _comm_backend = None
     _comm_module = None
@@ -161,6 +175,23 @@ def finalize():
 def is_initialized():
     """Check if SBD has been initialized"""
     return _initialized
+
+def finalize_mpi():
+    """
+    Explicitly finalize MPI.
+    
+    WARNING: Only call this if you initialized MPI yourself outside of mpi4py.
+    If using mpi4py (recommended), MPI finalization is handled automatically at exit.
+    
+    This is provided for advanced use cases where explicit MPI lifecycle control is needed.
+    Similar to calling MPI_Finalize() in C/C++ code.
+    
+    Note: After calling this, you cannot use any MPI functions until MPI is reinitialized.
+    """
+    if _device_module is not None and hasattr(_device_module, 'finalize_mpi'):
+        _device_module.finalize_mpi()
+    else:
+        raise RuntimeError("SBD not initialized. Call sbd.init() first.")
 
 def get_device():
     """
@@ -477,6 +508,7 @@ __all__ = [
     # Initialization
     'init',
     'finalize',
+    'finalize_mpi',
     'is_initialized',
     
     # Query functions
