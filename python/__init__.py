@@ -518,6 +518,31 @@ def makestring(config, bit_length, total_bit_length):
         raise RuntimeError("Call sbd.init() first")
     return _device_module.makestring(config, bit_length, total_bit_length)
 
+def from_string(s, bit_length, total_bit_length):
+    """
+    Convert binary string to determinant format.
+    
+    Args:
+        s (str): Binary string (e.g., "11111000000000000000")
+        bit_length (int): Bit length per size_t
+        total_bit_length (int): Total bit length
+    
+    Returns:
+        list: Determinant in SBD format (list of size_t)
+    
+    Raises:
+        RuntimeError: If init() has not been called
+    
+    Example:
+        >>> import sbd
+        >>> sbd.init()
+        >>> det = sbd.from_string("11111", bit_length=20, total_bit_length=10)
+        >>> print(det)  # [31] (binary 11111 = decimal 31)
+    """
+    if not _initialized:
+        raise RuntimeError("Call sbd.init() first")
+    return _device_module.from_string(s, bit_length, total_bit_length)
+
 def tpb_diag_from_files(fcidumpfile, adetfile, sbd_data, loadname="", savename=""):
     """
     Perform TPB diagonalization from files (simplified API).
