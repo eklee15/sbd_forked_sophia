@@ -77,60 +77,45 @@ def simulate_quantum_sampling(num_samples=10):
     
     return quantum_samples
 
-def bitstring_to_determinant(bitstring, num_orbitals=10):
+def bitstring_to_sbd_determinant(bitstring, num_orbitals=10, bit_length=20):
     """
-    Convert quantum measurement bitstring to determinant format.
+    Convert quantum measurement bitstring directly to SBD determinant format.
+    
+    Uses efficient C++ conversion via sbd.from_string() - much faster than Python!
+    
+    Bitstring format: hex string like '0x1f001f'
+    - Lower bits: alpha spin orbitals
+    - Upper bits: beta spin orbitals
     
     Args:
-        bitstring: Hex string like '0x1f001f'
-        num_orbitals: Number of orbitals
+        bitstring: Hex string from quantum measurement
+        num_orbitals: Number of orbitals per spin
+        bit_length: SBD bit_length parameter (bits per size_t)
     
     Returns:
-        (alpha_det, beta_det): Lists of occupied orbital indices
+        tuple: (alpha_det, beta_det) in SBD format (list of size_t)
     """
-    # Convert hex to binary
-    binary = bin(int(bitstring, 16))[2:].zfill(num_orbitals * 2)
+    import sbd
     
-    # Split into alpha and beta
-    alpha_bits = binary[:num_orbitals]
-    beta_bits = binary[num_orbitals:]
+    # Convert hex to integer
+    value = int(bitstring, 16)
     
-    # Find occupied orbitals
-    alpha_det = [i for i, bit in enumerate(alpha_bits) if bit == '1']
-    beta_det = [i for i, bit in enumerate(beta_bits) if bit == '1']
+    # Extract alpha and beta parts
+    alpha_mask = (1 << num_orbitals) - 1
+    beta_mask = alpha_mask << num_orbitals
+    
+    alpha = value & alpha_mask
+    beta = (value & beta_mask) >> num_orbitals
+    
+    # Convert to binary strings (padded to num_orbitals bits)
+    alpha_binary = bin(alpha)[2:].zfill(num_orbitals)
+    beta_binary = bin(beta)[2:].zfill(num_orbitals)
+    
+    # Use C++ from_string for efficient conversion to SBD format
+    alpha_det = sbd.from_string(alpha_binary, bit_length, num_orbitals)
+    beta_det = sbd.from_string(beta_binary, bit_length, num_orbitals)
     
     return alpha_det, beta_det
-
-def determinant_to_sbd_format(orbital_list, bit_length=20):
-    """
-    Convert orbital list to SBD bit array format.
-    
-    Args:
-        orbital_list: List of occupied orbital indices, e.g., [0,1,2,3,4]
-        bit_length: Total number of orbitals (bits)
-    
-    Returns:
-        List of size_t representing the determinant in SBD format
-    
-    Example:
-        [0,1,2,3,4] with bit_length=20 -> bit array with first 5 bits set
-        This matches the format in h2o-1em3-alpha.txt: "000000000000000000011111"
-    """
-    # SBD uses size_t arrays to represent determinants
-    # Each size_t can hold 64 bits (on 64-bit systems)
-    bits_per_word = 64
-    num_words = (bit_length + bits_per_word - 1) // bits_per_word
-    
-    # Initialize array of size_t (represented as list of integers)
-    det_array = [0] * num_words
-    
-    # Set bits for occupied orbitals
-    for orbital in orbital_list:
-        word_idx = orbital // bits_per_word
-        bit_idx = orbital % bits_per_word
-        det_array[word_idx] |= (1 << bit_idx)
-    
-    return det_array
 
 def main():
     args = parse_args()
@@ -198,19 +183,16 @@ def main():
         if rank == 0:
             print("\n[Step 3] All ranks converting quantum samples to determinants...")
         
-        # Convert bitstrings to determinants
+        # Convert bitstrings to SBD determinants (using fast C++ function)
         alpha_dets_list = []
         beta_dets_list = []
         
         for bitstring in quantum_samples['bitstrings']:
-            alpha_orbitals, beta_orbitals = bitstring_to_determinant(
+            alpha_det_sbd, beta_det_sbd = bitstring_to_sbd_determinant(
                 bitstring,
-                quantum_samples['num_orbitals']
+                num_orbitals=quantum_samples['num_orbitals'],
+                bit_length=args.bit_length
             )
-            
-            # Convert to SBD format
-            alpha_det_sbd = determinant_to_sbd_format(alpha_orbitals, args.bit_length)
-            beta_det_sbd = determinant_to_sbd_format(beta_orbitals, args.bit_length)
             
             alpha_dets_list.append(alpha_det_sbd)
             beta_dets_list.append(beta_det_sbd)
