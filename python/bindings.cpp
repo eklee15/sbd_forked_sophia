@@ -282,18 +282,23 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
     m.def("cleanup_device",
         []() {
 #ifdef SBD_THRUST
-            // Synchronize and reset GPU device
+            // Synchronize GPU device but do NOT reset
+            // cudaDeviceReset() can interfere with CUDA-aware MPI (UCX)
+            // which may still have active CUDA events/streams
 #ifdef __CUDACC__
             cudaDeviceSynchronize();
-            cudaDeviceReset();
+            // Note: cudaDeviceReset() intentionally NOT called to avoid
+            // conflicts with CUDA-aware MPI cleanup
 #else
             hipDeviceSynchronize();
-            hipDeviceReset();
+            // Note: hipDeviceReset() intentionally NOT called to avoid
+            // conflicts with ROCm-aware MPI cleanup
 #endif
 #endif
         },
-        "Clean up GPU device resources (GPU backend only). "
-        "Call this before program exit or when switching devices.");
+        "Synchronize GPU device (GPU backend only). "
+        "Note: Does not call cudaDeviceReset() to avoid conflicts with CUDA-aware MPI. "
+        "GPU resources are freed automatically when the process exits.");
 
     m.def("finalize_mpi",
         []() {

@@ -146,7 +146,7 @@ def finalize():
     Finalize SBD and clean up internal state.
     
     This function:
-    - Cleans up GPU device resources (if using GPU backend)
+    - Synchronizes GPU device (if using GPU backend)
     - Resets internal Python state
     - Does NOT call MPI_Finalize() - MPI lifecycle is managed by mpi4py
     
@@ -154,16 +154,20 @@ def finalize():
     
     Note: Similar to torch.distributed.destroy_process_group(), this ensures
     proper cleanup of distributed computing resources.
+    
+    GPU Note: This calls cudaDeviceSynchronize() but NOT cudaDeviceReset() to
+    avoid conflicts with CUDA-aware MPI (UCX). GPU resources are freed automatically
+    when the process exits.
     """
     global _device_module, _comm_backend, _comm_module, _global_comm, _initialized
     
-    # Clean up GPU resources if using GPU backend
+    # Synchronize GPU device if using GPU backend
     if _device_module is not None and hasattr(_device_module, 'cleanup_device'):
         try:
             _device_module.cleanup_device()
         except Exception as e:
             import warnings
-            warnings.warn(f"GPU cleanup failed: {e}")
+            warnings.warn(f"GPU synchronization failed: {e}")
     
     # Reset Python state
     _device_module = None

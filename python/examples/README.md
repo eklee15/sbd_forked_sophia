@@ -189,15 +189,18 @@ try:
     sbd.init(device='gpu')
     results = sbd.tpb_diag_from_files(...)
 finally:
-    sbd.finalize()  # Cleans up GPU memory and resets state
+    sbd.finalize()  # Synchronizes GPU and resets state
 ```
 
 **Important:** Always call `sbd.finalize()` to:
-- Free GPU memory (calls `cudaDeviceReset()` on GPU backend)
+- Synchronize GPU operations (calls `cudaDeviceSynchronize()` on GPU backend)
 - Reset internal state for re-initialization
 - Ensure proper cleanup similar to `torch.distributed.destroy_process_group()`
 
-Note: `finalize()` does NOT call `MPI_Finalize()` - that's handled automatically by mpi4py.
+**Note:**
+- `finalize()` does NOT call `MPI_Finalize()` - that's handled automatically by mpi4py
+- `finalize()` does NOT call `cudaDeviceReset()` to avoid conflicts with CUDA-aware MPI (UCX)
+- GPU memory is freed automatically when the process exits
 
 ### Notes
 

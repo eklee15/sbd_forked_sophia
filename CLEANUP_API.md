@@ -4,14 +4,19 @@
 
 Similar to `torch.distributed.destroy_process_group()`, SBD provides proper cleanup functions for distributed computing resources. This document explains the cleanup API and when to use each function.
 
+## Important Note on CUDA-Aware MPI
+
+When using CUDA-aware MPI (UCX), calling `cudaDeviceReset()` can cause conflicts because UCX may still have active CUDA events/streams. Therefore, `sbd.finalize()` only calls `cudaDeviceSynchronize()` to ensure all GPU operations complete, but does NOT call `cudaDeviceReset()`. GPU resources are freed automatically when the process exits.
+
 ## Cleanup Functions
 
 ### 1. `sbd.finalize()` - Standard Cleanup (Recommended)
 
-**Purpose:** Clean up SBD resources including GPU devices and reset internal state.
+**Purpose:** Synchronize GPU and reset internal Python state.
 
 **What it does:**
-- Calls `cudaDeviceReset()` or `hipDeviceReset()` on GPU backend to free GPU memory
+- Calls `cudaDeviceSynchronize()` or `hipDeviceSynchronize()` on GPU backend to ensure all operations complete
+- Does NOT call `cudaDeviceReset()` to avoid conflicts with CUDA-aware MPI (UCX)
 - Resets Python internal state
 - Does NOT call `MPI_Finalize()` (MPI lifecycle managed by mpi4py)
 
@@ -68,10 +73,11 @@ The cleanup functions are exposed in the C++ bindings:
 
 ### `cleanup_device()`
 ```cpp
-// GPU backend only - synchronizes and resets device
+// GPU backend only - synchronizes device (does NOT reset)
 #ifdef SBD_THRUST
     cudaDeviceSynchronize();
-    cudaDeviceReset();
+    // Note: cudaDeviceReset() intentionally NOT called to avoid
+    // conflicts with CUDA-aware MPI cleanup
 #endif
 ```
 
@@ -155,11 +161,13 @@ sbd.finalize()  # Only clean up SBD resources
 
 ## GPU Memory Management
 
-The `finalize()` function is especially important for GPU backends:
+The `finalize()` function is important for GPU backends:
 
-- **Without `finalize()`:** GPU memory may not be released properly
-- **With `finalize()`:** Calls `cudaDeviceReset()` to ensure all GPU resources are freed
-- **Multiple GPUs:** Each MPI rank cleans up its assigned GPU device
+- **Without `finalize()`:** GPU operations may not complete before program exit
+- **With `finalize()`:** Calls `cudaDeviceSynchronize()` to ensure all GPU operations complete
+- **Memory Cleanup:** GPU memory is freed automatically when the process exits
+- **Multiple GPUs:** Each MPI rank synchronizes its assigned GPU device
+- **CUDA-Aware MPI:** Does NOT call `cudaDeviceReset()` to avoid conflicts with UCX/MPI cleanup
 
 ## MPI Lifecycle
 

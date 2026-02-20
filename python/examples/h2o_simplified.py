@@ -131,8 +131,9 @@ def main():
         return_code = 1
     
     finally:
-        # Clean up SBD resources (GPU memory, internal state)
-        # Note: Does not call MPI_Finalize() - that's handled automatically by mpi4py
+        # Synchronize GPU and reset internal state
+        # Note: Calls cudaDeviceSynchronize() but NOT cudaDeviceReset() to avoid
+        # conflicts with CUDA-aware MPI (UCX). Does not call MPI_Finalize() either.
         sbd.finalize()
     
     return return_code
