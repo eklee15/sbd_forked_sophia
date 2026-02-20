@@ -131,6 +131,12 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
           py::arg("bit_length"),
           py::arg("total_bit_length"));
 
+    m.def("from_string", &sbd::from_string,
+          "Convert binary string to determinant format",
+          py::arg("s"),
+          py::arg("bit_length"),
+          py::arg("total_bit_length"));
+
     // ========================================================================
     // Main TPB diagonalization function (data structure version)
     // ========================================================================
