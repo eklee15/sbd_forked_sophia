@@ -276,6 +276,40 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
         py::arg("savename") = "");
 
     // ========================================================================
+    // Cleanup/Finalization functions
+    // ========================================================================
+    
+    m.def("cleanup_device",
+        []() {
+#ifdef SBD_THRUST
+            // Synchronize and reset GPU device
+#ifdef __CUDACC__
+            cudaDeviceSynchronize();
+            cudaDeviceReset();
+#else
+            hipDeviceSynchronize();
+            hipDeviceReset();
+#endif
+#endif
+        },
+        "Clean up GPU device resources (GPU backend only). "
+        "Call this before program exit or when switching devices.");
+
+    m.def("finalize_mpi",
+        []() {
+            // Check if MPI is initialized before finalizing
+            int initialized, finalized;
+            MPI_Initialized(&initialized);
+            MPI_Finalized(&finalized);
+            
+            if (initialized && !finalized) {
+                MPI_Finalize();
+            }
+        },
+        "Finalize MPI. Only call this if you initialized MPI yourself. "
+        "If using mpi4py, MPI finalization is handled automatically at exit.");
+
+    // ========================================================================
     // Version information
     // ========================================================================
     

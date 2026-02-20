@@ -180,6 +180,25 @@ Convergence depends on:
 - Balance `adet_comm_size`, `bdet_comm_size`, `task_comm_size`
 - Start with equal sizes and adjust based on profiling
 
+### Resource Cleanup
+
+All examples properly clean up resources using `sbd.finalize()`:
+
+```python
+try:
+    sbd.init(device='gpu')
+    results = sbd.tpb_diag_from_files(...)
+finally:
+    sbd.finalize()  # Cleans up GPU memory and resets state
+```
+
+**Important:** Always call `sbd.finalize()` to:
+- Free GPU memory (calls `cudaDeviceReset()` on GPU backend)
+- Reset internal state for re-initialization
+- Ensure proper cleanup similar to `torch.distributed.destroy_process_group()`
+
+Note: `finalize()` does NOT call `MPI_Finalize()` - that's handled automatically by mpi4py.
+
 ### Notes
 
 - **TPB Method Only:** This example uses Two-Particle Basis (TPB) diagonalization for quantum chemistry
@@ -187,6 +206,7 @@ Convergence depends on:
 - **Automatic GPU Assignment:** Each MPI rank assigned to GPU automatically
 - **CUDA-aware MPI:** Recommended for best GPU performance
 - **Memory:** Larger determinant files require more memory per rank
+- **Cleanup:** Always call `sbd.finalize()` in finally blocks for proper resource cleanup
 
 ### Troubleshooting
 

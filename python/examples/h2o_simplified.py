@@ -131,7 +131,8 @@ def main():
         return_code = 1
     
     finally:
-        # Clean up SBD (does not finalize MPI - that's handled by mpirun)
+        # Clean up SBD resources (GPU memory, internal state)
+        # Note: Does not call MPI_Finalize() - that's handled automatically by mpi4py
         sbd.finalize()
     
     return return_code
