@@ -137,13 +137,20 @@ print(f"Using BLAS libraries: {blas_libs}")
 libraries = mpi_libs + blas_libs
 
 # Build extra link args with RPATH
-extra_link_args = ['-fopenmp']
-
-# Add RPATH so libraries can be found at runtime without LD_LIBRARY_PATH
-for lib_dir in library_dirs:
-    extra_link_args.append(f'-Wl,--rpath,{lib_dir}')
-
-print(f"RPATH will be set to: {library_dirs}")
+import platform
+if platform.system() == 'Darwin':
+    # macOS: OpenMP linking handled via -lomp in libraries list
+    # No RPATH needed on macOS - uses different dynamic linking
+    extra_link_args = []
+    print(f"Platform: macOS - RPATH not used")
+else:
+    # Linux: use -fopenmp for both compile and link
+    extra_link_args = ['-fopenmp']
+    # Add RPATH so libraries can be found at runtime without LD_LIBRARY_PATH
+    for lib_dir in library_dirs:
+        extra_link_args.append(f'-Wl,--rpath,{lib_dir}')
+    print(f"RPATH will be set to: {library_dirs}")
+    print(f"Platform: Linux")
 
 # Detect GPU availability
 gpu_compiler, has_nvhpc = find_nvidia_hpc_sdk()
@@ -191,14 +198,32 @@ ext_modules = []
 # CPU backend
 if build_cpu:
     print("\nConfiguring CPU backend (_core_cpu)")
-    cpu_ext = Extension(
-        'sbd._core_cpu',
-        ['python/bindings.cpp'],
-        include_dirs=include_dirs,
-        libraries=libraries,
-        library_dirs=library_dirs,
-        language='c++',
-        extra_compile_args=[
+    # macOS-specific OpenMP handling
+    import platform
+    if platform.system() == 'Darwin':
+        # macOS: use libomp from Homebrew
+        omp_include = '/opt/homebrew/opt/libomp/include'
+        omp_lib = '/opt/homebrew/opt/libomp/lib'
+        if omp_include not in include_dirs:
+            include_dirs.append(omp_include)
+        if omp_lib not in library_dirs:
+            library_dirs.append(omp_lib)
+        if 'omp' not in libraries:
+            libraries.append('omp')
+        
+        cpu_compile_args = [
+            '-std=c++17',
+            '-Xpreprocessor', '-fopenmp',
+            '-O2',
+            '-Wno-sign-compare',
+            '-Wno-unused-variable',
+            '-fPIC',
+            '-DSBD_MODULE_NAME=_core_cpu'
+        ]
+        cpu_link_args = extra_link_args + ['-lomp']
+    else:
+        # Linux: standard OpenMP
+        cpu_compile_args = [
             '-std=c++17',
             '-fopenmp',
             '-O2',
@@ -206,8 +231,18 @@ if build_cpu:
             '-Wno-unused-variable',
             '-fPIC',
             '-DSBD_MODULE_NAME=_core_cpu'
-        ],
-        extra_link_args=extra_link_args,
+        ]
+        cpu_link_args = extra_link_args
+    
+    cpu_ext = Extension(
+        'sbd._core_cpu',
+        ['python/bindings.cpp'],
+        include_dirs=include_dirs,
+        libraries=libraries,
+        library_dirs=library_dirs,
+        language='c++',
+        extra_compile_args=cpu_compile_args,
+        extra_link_args=cpu_link_args,
     )
     ext_modules.append(cpu_ext)
 
