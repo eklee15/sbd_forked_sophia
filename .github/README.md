@@ -206,36 +206,6 @@ print(f"Ground state energy: {results['energy']} Hartree")
 - MPI is the standard for distributed computing in HPC environments
 - Future versions may support additional backends (e.g., NCCL for GPU-only communication)
 
-### Legacy API (Backward Compatible)
-
-For backward compatibility, the legacy API with explicit mpi4py is still supported:
-
-```python
-from mpi4py import MPI
-import sbd
-
-# Get MPI communicator
-comm = MPI.COMM_WORLD
-
-# Configure calculation
-config = sbd.TPB_SBD()
-config.max_it = 100
-config.eps = 1e-6
-config.bit_length = 20
-
-# Run diagonalization
-results = sbd.tpb_diag_from_files(
-    comm=comm,
-    sbd_data=config,
-    fcidumpfile="fcidump.txt",
-    adetfile="alphadets.txt"
-)
-
-# Access results
-energy = results['energy']
-density = results['density']
-```
-
 ### Backend Selection
 
 ```python
