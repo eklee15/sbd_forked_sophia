@@ -19,28 +19,80 @@ import argparse
 import sys
 
 def parse_args():
-    """Parse command line arguments"""
+    """Parse command line arguments for all TPB_SBD parameters"""
     parser = argparse.ArgumentParser(
-        description='H2O calculation with simplified SBD API',
+        description='H2O calculation with CPU/GPU support',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
+    # Device selection
     parser.add_argument('--device', choices=['auto', 'cpu', 'gpu'], default='auto',
-                       help='Compute device')
+                       help='Device to use (auto=detect, cpu=force CPU, gpu=force GPU)')
+    
+    # Input files
     parser.add_argument('--fcidump', default='../../data/h2o/fcidump.txt',
                        help='Path to FCIDUMP file')
-    parser.add_argument('--adetfile', default='../../data/h2o/h2o-1em4-alpha.txt',
+    parser.add_argument('--adetfile', default='../../data/h2o/h2o-1em3-alpha.txt',
                        help='Path to alpha determinants file')
-    parser.add_argument('--max_it', type=int, default=100,
-                       help='Maximum iterations')
-    parser.add_argument('--eps', type=float, default=1e-4,
-                       help='Convergence tolerance')
-    parser.add_argument('--adet_comm_size', type=int, default=2,
-                       help='Alpha determinant communicator size')
-    parser.add_argument('--bdet_comm_size', type=int, default=2,
-                       help='Beta determinant communicator size')
-    parser.add_argument('--task_comm_size', type=int, default=2,
+    parser.add_argument('--bdetfile', default='',
+                       help='Path to beta determinants file (optional, uses adetfile if not specified)')
+    parser.add_argument('--loadname', default='',
+                       help='Load initial wavefunction from file')
+    parser.add_argument('--savename', default='',
+                       help='Save final wavefunction to file')
+    
+    # MPI communicator sizes
+    parser.add_argument('--task_comm_size', type=int, default=1,
                        help='Task communicator size')
+    parser.add_argument('--adet_comm_size', type=int, default=1,
+                       help='Alpha determinant communicator size')
+    parser.add_argument('--bdet_comm_size', type=int, default=1,
+                       help='Beta determinant communicator size')
+    parser.add_argument('--task_comm_size', type=int, default=1,
+                       help='Helper communicator size')
+    
+    # Diagonalization method and convergence
+    parser.add_argument('--method', type=int, default=0, choices=[0, 1, 2, 3],
+                       help='Diagonalization method: 0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham')
+    parser.add_argument('--max_it', '--max-iter', type=int, default=100, dest='max_it',
+                       help='Maximum number of iterations')
+    parser.add_argument('--max_nb', type=int, default=10,
+                       help='Maximum number of basis vectors')
+    parser.add_argument('--eps', '--tolerance', type=float, default=1e-3, dest='eps',
+                       help='Convergence tolerance')
+    parser.add_argument('--max_time', type=float, default=1e10,
+                       help='Maximum time in seconds')
+    
+    # Initialization and options
+    parser.add_argument('--init', type=int, default=0,
+                       help='Initialization method')
+    parser.add_argument('--do_shuffle', type=int, default=0, choices=[0, 1],
+                       help='Shuffle determinants (0=no, 1=yes)')
+    parser.add_argument('--do_rdm', '--rdm', type=int, default=0, choices=[0, 1], dest='do_rdm',
+                       help='Calculate RDM (0=density only, 1=full RDM)')
+    
+    # Carryover determinant selection
+    parser.add_argument('--carryover_type', type=int, default=0,
+                       help='Carryover determinant selection type')
+    parser.add_argument('--ratio', type=float, default=0.0,
+                       help='Carryover ratio')
+    parser.add_argument('--threshold', type=float, default=0.0,
+                       help='Carryover threshold')
+    
+    # Determinant representation
+    parser.add_argument('--bit_length', type=int, default=20,
+                       help='Bit length for determinant representation')
+    
+    # Output options
+    parser.add_argument('--dump_matrix_form_wf', default='',
+                       help='Filename to dump wavefunction in matrix form')
+    
+    # GPU-specific options (only used with GPU backend)
+    parser.add_argument('--use_precalculated_dets', type=int, default=1, choices=[0, 1],
+                       help='Use precalculated determinants (GPU only)')
+    parser.add_argument('--max_memory_gb_for_determinants', '--gpu-memory', type=int, default=-1,
+                       dest='max_memory_gb_for_determinants',
+                       help='Maximum GPU memory in GB for determinants (-1=auto, GPU only)')
     
     return parser.parse_args()
 
