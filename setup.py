@@ -214,7 +214,7 @@ if build_cpu:
         cpu_compile_args = [
             '-std=c++17',
             '-Xpreprocessor', '-fopenmp',
-            '-O2',
+            '-O3',
             '-Wno-sign-compare',
             '-Wno-unused-variable',
             '-fPIC',
@@ -226,7 +226,7 @@ if build_cpu:
         cpu_compile_args = [
             '-std=c++17',
             '-fopenmp',
-            '-O2',
+            '-O3',
             '-Wno-sign-compare',
             '-Wno-unused-variable',
             '-fPIC',
