@@ -89,7 +89,7 @@ export NVHPC_HOME=/opt/nvidia/hpc_sdk/Linux_x86_64/2025/compilers
 Automatically builds both CPU and GPU backends if GPU support is detected:
 
 ```bash
-pip install -e .
+pip install -e . --no-build-isolation
 ```
 
 This will:
@@ -101,17 +101,17 @@ This will:
 
 Build only CPU backend:
 ```bash
-SBD_BUILD_BACKEND=cpu pip install -e .
+SBD_BUILD_BACKEND=cpu pip install -e . --no-build-isolation
 ```
 
 Build only GPU backend:
 ```bash
-SBD_BUILD_BACKEND=gpu pip install -e .
+SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation
 ```
 
 Force build both:
 ```bash
-SBD_BUILD_BACKEND=both pip install -e .
+SBD_BUILD_BACKEND=both pip install -e . --no-build-isolation
 ```
 
 ### Verification
@@ -468,7 +468,7 @@ sbd.print_backend_info()              # Prints backend information
 **Solution:** Backend not built. Check installation:
 ```bash
 ls python/sbd/_core_*.so
-pip install -e . -v  # Verbose output
+pip install -e . --no-build-isolation -v  # Verbose output
 ```
 
 ### GPU Backend Not Building
@@ -478,7 +478,7 @@ pip install -e . -v  # Verbose output
 **Solutions:**
 1. Check NVIDIA HPC SDK: `which nvc++`
 2. Set NVHPC_HOME: `export NVHPC_HOME=/path/to/hpc_sdk/compilers`
-3. Force GPU build: `SBD_BUILD_BACKEND=gpu pip install -e .`
+3. Force GPU build: `SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation`
 
 ### MPI Errors
 

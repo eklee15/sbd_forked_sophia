@@ -107,7 +107,7 @@ def init(device='auto', comm_backend='mpi'):
         except ImportError as e:
             raise RuntimeError(
                 f"GPU device requires _core_gpu.so to be built.\n"
-                f"Build with: SBD_BUILD_BACKEND=gpu pip install -e .\n"
+                f"Build with: SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation\n"
                 f"Error: {e}"
             )
     elif device == 'cpu':
@@ -118,7 +118,7 @@ def init(device='auto', comm_backend='mpi'):
         except ImportError as e:
             raise RuntimeError(
                 f"CPU device requires _core_cpu.so to be built.\n"
-                f"Build with: pip install -e .\n"
+                f"Build with: pip install -e . --no-build-isolation\n"
                 f"Error: {e}"
             )
     else:
