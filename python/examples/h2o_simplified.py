@@ -42,8 +42,6 @@ def parse_args():
                        help='Save final wavefunction to file')
     
     # MPI communicator sizes
-    parser.add_argument('--task_comm_size', type=int, default=1,
-                       help='Task communicator size')
     parser.add_argument('--adet_comm_size', type=int, default=1,
                        help='Alpha determinant communicator size')
     parser.add_argument('--bdet_comm_size', type=int, default=1,
