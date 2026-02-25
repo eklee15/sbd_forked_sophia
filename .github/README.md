@@ -80,6 +80,11 @@ export BLAS_LIBS=openblas  # or mkl_rt, blas,lapack, etc.
 
 # GPU configuration (optional)
 export NVHPC_HOME=/opt/nvidia/hpc_sdk/Linux_x86_64/2025/compilers
+export PATH=$NVHPC_HOME/bin:$PATH
+export CC=nvc
+export CXX=nvc++
+export CFLAGS=""
+export CXXFLAGS=""
 ```
 
 ### Installation Methods
