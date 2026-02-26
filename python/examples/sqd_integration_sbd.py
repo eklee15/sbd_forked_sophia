@@ -157,9 +157,21 @@ def get_molecule_data(args):
     print(f"Parsing {fcidump_path}")
     mf_as = tools.fcidump.to_scf(str(fcidump_path))
     
-    # Extract molecule info
-    norb = mf_as.mol.nao_nr()
-    nelec_total = mf_as.mol.nelectron
+    # Extract molecule info from FCIDUMP
+    # Note: mf_as.mol.nao_nr() returns 0 for FCIDUMP files, so we need to read the header
+    with open(fcidump_path, 'r') as f:
+        first_line = f.readline()
+        # Parse NORB and NELEC from header like: &FCI NORB=  16,NELEC=10,MS2=0,
+        import re
+        norb_match = re.search(r'NORB\s*=\s*(\d+)', first_line)
+        nelec_match = re.search(r'NELEC\s*=\s*(\d+)', first_line)
+        
+        if not norb_match or not nelec_match:
+            raise ValueError(f"Could not parse NORB and NELEC from FCIDUMP header: {first_line}")
+        
+        norb = int(norb_match.group(1))
+        nelec_total = int(nelec_match.group(1))
+    
     # Assume closed shell or equal alpha/beta for simplicity
     nelec_a = nelec_total // 2
     nelec_b = nelec_total - nelec_a
