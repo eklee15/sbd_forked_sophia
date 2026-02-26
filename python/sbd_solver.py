@@ -217,6 +217,15 @@ def solve_sci(
         energy = results["energy"]
         density = np.array(results["density"])
         
+        # Debug: Print what we got from SBD
+        if mpi_rank == 0:
+            print(f"\n[DEBUG] SBD Results:")
+            print(f"  Energy type: {type(energy)}, value: {energy}")
+            print(f"  Density shape: {density.shape}, dtype: {density.dtype}")
+            print(f"  Density first 10 elements: {density[:10] if len(density) >= 10 else density}")
+            print(f"  Energy is NaN: {np.isnan(energy)}")
+            print(f"  Energy is finite: {np.isfinite(energy)}")
+        
         # Convert density to orbital occupancies
         # SBD returns density as [alpha_0, beta_0, alpha_1, beta_1, ...]
         # We need to separate into (alpha_occs, beta_occs)
