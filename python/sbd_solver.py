@@ -25,7 +25,7 @@ except ImportError:
         "qiskit-addon-sqd is required. Install it with: pip install qiskit-addon-sqd"
     )
 
-# Import SBD Python bindings - use backend modules directly to avoid init() requirement
+# Import SBD Python bindings - import both backends if available
 try:
     # Try to import both backends
     try:
@@ -38,21 +38,58 @@ try:
     except ImportError:
         sbd_gpu = None
     
-    # Select backend based on environment or default to CPU
+    # Check if at least one backend is available
+    if sbd_cpu is None and sbd_gpu is None:
+        raise ImportError("No SBD backend available (neither CPU nor GPU)")
+    
+    # Default backend selection (can be overridden by DeviceConfig)
     import os
-    backend_name = os.environ.get('SBD_BACKEND', 'cpu').lower()
+    backend_name = os.environ.get('SBD_BACKEND', 'auto').lower()
     
     if backend_name == 'gpu' and sbd_gpu is not None:
         sbd = sbd_gpu
-    elif sbd_cpu is not None:
+    elif backend_name == 'cpu' and sbd_cpu is not None:
         sbd = sbd_cpu
+    elif backend_name == 'auto':
+        # Auto-select: prefer GPU if available, otherwise CPU
+        sbd = sbd_gpu if sbd_gpu is not None else sbd_cpu
     else:
-        raise ImportError("No SBD backend available (neither CPU nor GPU)")
+        # Fallback to any available backend
+        sbd = sbd_cpu if sbd_cpu is not None else sbd_gpu
         
 except ImportError as e:
     raise ImportError(
         f"SBD Python bindings not found. Please install SBD with Python support. Error: {e}"
     )
+
+
+def _get_backend_module(use_gpu: bool):
+    """
+    Get the appropriate SBD backend module based on device configuration.
+    
+    Args:
+        use_gpu: Whether to use GPU backend
+        
+    Returns:
+        The appropriate backend module (sbd_cpu or sbd_gpu)
+        
+    Raises:
+        ImportError: If requested backend is not available
+    """
+    if use_gpu:
+        if sbd_gpu is None:
+            raise ImportError(
+                "GPU backend requested but not available. "
+                "Please build SBD with GPU support (THRUST)."
+            )
+        return sbd_gpu
+    else:
+        if sbd_cpu is None:
+            raise ImportError(
+                "CPU backend requested but not available. "
+                "Please build SBD with CPU support."
+            )
+        return sbd_cpu
 
 
 def solve_sci(
@@ -67,6 +104,7 @@ def solve_sci(
     sbd_config: dict | None = None,
     temp_dir: str | Path | None = None,
     clean_temp_dir: bool = True,
+    device_config = None,  # DeviceConfig object
 ) -> SCIResult:
     """
     Diagonalize Hamiltonian in subspace defined by CI strings using SBD.
@@ -84,11 +122,18 @@ def solve_sci(
         sbd_config: Dictionary of SBD configuration parameters. If None, uses defaults.
         temp_dir: An absolute path to a directory for storing temporary files.
         clean_temp_dir: Whether to delete intermediate files.
+        device_config: DeviceConfig object to select CPU/GPU backend. If None, uses default.
 
     Returns:
         The diagonalization result as SCIResult.
     """
     n_alpha, n_beta = nelec
+    
+    # Select backend based on device configuration
+    if device_config is not None:
+        backend = _get_backend_module(device_config.use_gpu)
+    else:
+        backend = sbd  # Use default backend
     
     # Set up MPI communicator
     if mpi_comm is None:
@@ -115,21 +160,21 @@ def solve_sci(
         
         # Convert CI strings to SBD determinant format
         strings_a, strings_b = ci_strings
-        adet = _ci_strings_to_sbd_dets(strings_a, norb)
-        bdet = _ci_strings_to_sbd_dets(strings_b, norb)
+        adet = _ci_strings_to_sbd_dets(strings_a, norb, backend)
+        bdet = _ci_strings_to_sbd_dets(strings_b, norb, backend)
         
         # Set up SBD configuration
-        sbd_data = _create_sbd_config(sbd_config)
+        sbd_data = _create_sbd_config(sbd_config, backend, device_config)
         
         # Set up file to dump wavefunction in matrix form
         wf_dump_file = sbd_dir / "wavefunction.txt"
         sbd_data.dump_matrix_form_wf = str(wf_dump_file)
         
         # Load FCIDUMP
-        fcidump = sbd.LoadFCIDump(str(fcidump_path))
+        fcidump = backend.LoadFCIDump(str(fcidump_path))
         
         # Run SBD diagonalization
-        results = sbd.tpb_diag(
+        results = backend.tpb_diag(
             mpi_comm,
             sbd_data,
             fcidump,
@@ -155,8 +200,8 @@ def solve_sci(
         co_bdet = results["carryover_bdet"]
         
         # Convert carryover determinants back to CI strings
-        co_strings_a = _sbd_dets_to_ci_strings(co_adet, norb)
-        co_strings_b = _sbd_dets_to_ci_strings(co_bdet, norb)
+        co_strings_a = _sbd_dets_to_ci_strings(co_adet, norb, backend)
+        co_strings_b = _sbd_dets_to_ci_strings(co_bdet, norb, backend)
         
         # Read wavefunction coefficients from dumped file
         mpi_comm.Barrier()  # Ensure file is written
@@ -221,6 +266,7 @@ def solve_sci_batch(
     sbd_config: dict | None = None,
     temp_dir: str | Path | None = None,
     clean_temp_dir: bool = True,
+    device_config = None,  # DeviceConfig object
 ) -> list[SCIResult]:
     """
     Diagonalize Hamiltonian in multiple subspaces using SBD.
@@ -254,13 +300,14 @@ def solve_sci_batch(
             sbd_config=sbd_config,
             temp_dir=temp_dir,
             clean_temp_dir=clean_temp_dir,
+            device_config=device_config,
         )
         for ci_strs in ci_strings
     ]
 
 
 def _ci_strings_to_sbd_dets(
-    ci_strings: np.ndarray, norb: int
+    ci_strings: np.ndarray, norb: int, backend=None
 ) -> list[list[int]]:
     """
     Convert CI strings (integers) to SBD determinant format (list of size_t words).
@@ -268,10 +315,14 @@ def _ci_strings_to_sbd_dets(
     Args:
         ci_strings: Array of CI strings as integers
         norb: Number of orbitals
+        backend: SBD backend module to use (if None, uses default)
         
     Returns:
         List of determinants in SBD format
     """
+    if backend is None:
+        backend = sbd
+    
     bit_length = 64  # Standard word size
     dets = []
     
@@ -279,14 +330,14 @@ def _ci_strings_to_sbd_dets(
         # Convert integer to binary string
         binary_str = format(int(ci_str), f'0{norb}b')
         # Convert to SBD determinant format using from_string
-        det = sbd.from_string(binary_str, bit_length, norb)
+        det = backend.from_string(binary_str, bit_length, norb)
         dets.append(det)
     
     return dets
 
 
 def _sbd_dets_to_ci_strings(
-    dets: list[list[int]], norb: int
+    dets: list[list[int]], norb: int, backend=None
 ) -> np.ndarray:
     """
     Convert SBD determinants to CI strings (integers).
@@ -294,16 +345,20 @@ def _sbd_dets_to_ci_strings(
     Args:
         dets: List of determinants in SBD format
         norb: Number of orbitals
+        backend: SBD backend module to use (if None, uses default)
         
     Returns:
         Array of CI strings as integers
     """
+    if backend is None:
+        backend = sbd
+    
     bit_length = 64
     ci_strings = []
     
     for det in dets:
         # Convert SBD determinant to binary string
-        binary_str = sbd.makestring(det, bit_length, norb)
+        binary_str = backend.makestring(det, bit_length, norb)
         # Convert binary string to integer
         ci_str = int(binary_str, 2)
         ci_strings.append(ci_str)
@@ -377,17 +432,22 @@ def _read_wavefunction_matrix(filepath: Path) -> np.ndarray | None:
         return None
 
 
-def _create_sbd_config(config_dict: dict | None = None) -> sbd.TPB_SBD:
+def _create_sbd_config(config_dict: dict | None = None, backend=None, device_config=None):
     """
     Create SBD configuration object from dictionary.
     
     Args:
         config_dict: Dictionary of configuration parameters
+        backend: SBD backend module to use (if None, uses default)
+        device_config: DeviceConfig object for GPU settings
         
     Returns:
         SBD configuration object
     """
-    sbd_data = sbd.TPB_SBD()
+    if backend is None:
+        backend = sbd
+    
+    sbd_data = backend.TPB_SBD()
     
     # Set defaults
     sbd_data.method = 0  # Davidson
@@ -408,6 +468,10 @@ def _create_sbd_config(config_dict: dict | None = None) -> sbd.TPB_SBD:
         for key, value in config_dict.items():
             if hasattr(sbd_data, key):
                 setattr(sbd_data, key, value)
+    
+    # Apply device configuration if provided
+    if device_config is not None:
+        device_config.apply(sbd_data)
     
     return sbd_data
 

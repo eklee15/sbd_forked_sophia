@@ -122,6 +122,7 @@ def test_n2_with_sbd(device_config=None):
         solve_sci_batch,
         mpi_comm=MPI.COMM_WORLD,
         sbd_config=sbd_config,
+        device_config=device_config,
     )
     
     print("\nStarting SQD with SBD solver...")
