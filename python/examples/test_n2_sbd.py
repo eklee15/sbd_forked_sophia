@@ -24,10 +24,6 @@ import numpy as np
 from pyscf import ao2mo, tools
 from mpi4py import MPI
 
-# Import from sbd package
-from sbd.sbd_solver import solve_sci_batch
-from sbd.device_config import DeviceConfig, print_device_info
-
 from qiskit_addon_sqd.counts import generate_bit_array_uniform
 from qiskit_addon_sqd.fermion import SCIResult, diagonalize_fermionic_hamiltonian
 from functools import partial
@@ -196,12 +192,37 @@ if __name__ == "__main__":
         print(f"MPI Size: {size}")
         print(f"MPI Rank: {rank}")
         print()
-        
+    
+    # Configure device based on command line argument and set environment variable
+    # IMPORTANT: Must set SBD_BACKEND before importing sbd module
+    if args.device == 'auto':
+        # Auto-detect will be handled by sbd module
+        if 'SBD_BACKEND' not in os.environ:
+            os.environ['SBD_BACKEND'] = 'auto'
+    elif args.device == 'cpu':
+        os.environ['SBD_BACKEND'] = 'cpu'
+    else:  # gpu
+        os.environ['SBD_BACKEND'] = 'gpu'
+    
+    if rank == 0:
+        print(f"SBD_BACKEND environment variable: {os.environ.get('SBD_BACKEND', 'not set')}")
+        print()
+    
+    # NOW import sbd modules (after setting environment variable)
+    from sbd.sbd_solver import solve_sci_batch, _backend_info
+    from sbd.device_config import DeviceConfig, print_device_info
+    
+    if rank == 0:
         # Print device information
         print_device_info()
         print()
+        print(f"SBD Backend Info:")
+        print(f"  Selected: {_backend_info['selected'].upper()}")
+        print(f"  CPU Available: {_backend_info['cpu_available']}")
+        print(f"  GPU Available: {_backend_info['gpu_available']}")
+        print()
     
-    # Configure device based on command line argument
+    # Create device config object (for configuration only, backend already selected)
     if args.device == 'auto':
         device_config = DeviceConfig.auto(max_memory_gb=args.max_memory_gb)
     elif args.device == 'cpu':
@@ -210,7 +231,7 @@ if __name__ == "__main__":
         device_config = DeviceConfig.gpu(max_memory_gb=args.max_memory_gb)
     
     if rank == 0:
-        print(f"Selected device configuration: {device_config}")
+        print(f"Device configuration: {device_config}")
         print()
     
     try:

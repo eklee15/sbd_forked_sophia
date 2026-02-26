@@ -25,71 +25,100 @@ except ImportError:
         "qiskit-addon-sqd is required. Install it with: pip install qiskit-addon-sqd"
     )
 
-# Import SBD Python bindings - import both backends if available
+# Import SBD Python bindings - can only import ONE backend per session due to pybind11 limitations
+# The backend selection must happen at import time, not runtime
+import os
+
+# Check which backend files exist
+_cpu_available = False
+_gpu_available = False
+
 try:
-    # Try to import both backends
-    try:
-        from . import _core_cpu as sbd_cpu
-    except ImportError:
-        sbd_cpu = None
+    import importlib.util
+    import sys
     
-    try:
-        from . import _core_gpu as sbd_gpu
-    except ImportError:
-        sbd_gpu = None
+    # Check if CPU backend file exists
+    cpu_spec = importlib.util.find_spec('sbd._core_cpu')
+    _cpu_available = cpu_spec is not None
     
-    # Check if at least one backend is available
-    if sbd_cpu is None and sbd_gpu is None:
-        raise ImportError("No SBD backend available (neither CPU nor GPU)")
-    
-    # Default backend selection (can be overridden by DeviceConfig)
-    import os
-    backend_name = os.environ.get('SBD_BACKEND', 'auto').lower()
-    
-    if backend_name == 'gpu' and sbd_gpu is not None:
-        sbd = sbd_gpu
-    elif backend_name == 'cpu' and sbd_cpu is not None:
-        sbd = sbd_cpu
-    elif backend_name == 'auto':
-        # Auto-select: prefer GPU if available, otherwise CPU
-        sbd = sbd_gpu if sbd_gpu is not None else sbd_cpu
+    # Check if GPU backend file exists
+    gpu_spec = importlib.util.find_spec('sbd._core_gpu')
+    _gpu_available = gpu_spec is not None
+except:
+    pass
+
+if not _cpu_available and not _gpu_available:
+    raise ImportError("No SBD backend available (neither CPU nor GPU)")
+
+# Select which backend to import based on environment variable
+# NOTE: Due to pybind11 limitations, we can only import ONE backend per Python session
+backend_name = os.environ.get('SBD_BACKEND', 'auto').lower()
+
+_selected_backend = None
+sbd = None
+
+if backend_name == 'gpu':
+    if _gpu_available:
+        from . import _core_gpu as sbd
+        _selected_backend = 'gpu'
     else:
-        # Fallback to any available backend
-        sbd = sbd_cpu if sbd_cpu is not None else sbd_gpu
-        
-except ImportError as e:
-    raise ImportError(
-        f"SBD Python bindings not found. Please install SBD with Python support. Error: {e}"
-    )
+        raise ImportError("GPU backend requested but not available")
+elif backend_name == 'cpu':
+    if _cpu_available:
+        from . import _core_cpu as sbd
+        _selected_backend = 'cpu'
+    else:
+        raise ImportError("CPU backend requested but not available")
+elif backend_name == 'auto':
+    # Auto-select: prefer GPU if available, otherwise CPU
+    if _gpu_available:
+        from . import _core_gpu as sbd
+        _selected_backend = 'gpu'
+    elif _cpu_available:
+        from . import _core_cpu as sbd
+        _selected_backend = 'cpu'
+else:
+    raise ValueError(f"Invalid SBD_BACKEND value: {backend_name}. Use 'cpu', 'gpu', or 'auto'")
+
+if sbd is None:
+    raise ImportError("Failed to import SBD backend")
+
+# Store backend info for reference
+_backend_info = {
+    'selected': _selected_backend,
+    'cpu_available': _cpu_available,
+    'gpu_available': _gpu_available,
+}
 
 
 def _get_backend_module(use_gpu: bool):
     """
     Get the appropriate SBD backend module based on device configuration.
     
+    NOTE: Due to pybind11 limitations, the backend is selected at import time.
+    This function validates that the requested backend matches what was imported.
+    
     Args:
         use_gpu: Whether to use GPU backend
         
     Returns:
-        The appropriate backend module (sbd_cpu or sbd_gpu)
+        The backend module (always returns 'sbd')
         
     Raises:
-        ImportError: If requested backend is not available
+        ImportError: If requested backend doesn't match imported backend
     """
-    if use_gpu:
-        if sbd_gpu is None:
-            raise ImportError(
-                "GPU backend requested but not available. "
-                "Please build SBD with GPU support (THRUST)."
-            )
-        return sbd_gpu
-    else:
-        if sbd_cpu is None:
-            raise ImportError(
-                "CPU backend requested but not available. "
-                "Please build SBD with CPU support."
-            )
-        return sbd_cpu
+    if use_gpu and _selected_backend != 'gpu':
+        raise ImportError(
+            f"GPU backend requested but {_selected_backend.upper()} backend was imported. "
+            f"Set SBD_BACKEND=gpu environment variable before importing sbd module."
+        )
+    elif not use_gpu and _selected_backend != 'cpu':
+        raise ImportError(
+            f"CPU backend requested but {_selected_backend.upper()} backend was imported. "
+            f"Set SBD_BACKEND=cpu environment variable before importing sbd module."
+        )
+    
+    return sbd
 
 
 def solve_sci(
