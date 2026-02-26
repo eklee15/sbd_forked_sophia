@@ -193,31 +193,31 @@ if __name__ == "__main__":
         print(f"MPI Rank: {rank}")
         print()
     
-    # Configure device based on command line argument and set environment variable
-    # IMPORTANT: Must set SBD_BACKEND before importing sbd module
-    if args.device == 'auto':
-        # Auto-detect will be handled by sbd module
-        if 'SBD_BACKEND' not in os.environ:
-            os.environ['SBD_BACKEND'] = 'auto'
-    elif args.device == 'cpu':
-        os.environ['SBD_BACKEND'] = 'cpu'
-    else:  # gpu
-        os.environ['SBD_BACKEND'] = 'gpu'
-    
-    if rank == 0:
-        print(f"SBD_BACKEND environment variable: {os.environ.get('SBD_BACKEND', 'not set')}")
-        print()
-    
-    # NOW import sbd modules (after setting environment variable)
+    # Import sbd modules first
+    import sbd
     from sbd.sbd_solver import solve_sci_batch, _backend_info
     from sbd.device_config import DeviceConfig, print_device_info
+    
+    # Initialize SBD with the selected device
+    # This must be done before using any SBD functions
+    device_str = args.device if args.device != 'auto' else ('gpu' if DeviceConfig._check_cuda() else 'cpu')
+    
+    if rank == 0:
+        print(f"Initializing SBD with device: {device_str}")
+        print()
+    
+    try:
+        sbd.init(device=device_str, comm_backend='mpi')
+    except RuntimeError as e:
+        if "already called" not in str(e):
+            raise
     
     if rank == 0:
         # Print device information
         print_device_info()
         print()
         print(f"SBD Backend Info:")
-        print(f"  Selected: {_backend_info['selected'].upper()}")
+        print(f"  Selected: {_backend_info['selected'].upper() if _backend_info['selected'] else 'UNKNOWN'}")
         print(f"  CPU Available: {_backend_info['cpu_available']}")
         print(f"  GPU Available: {_backend_info['gpu_available']}")
         print()

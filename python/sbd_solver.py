@@ -25,97 +25,86 @@ except ImportError:
         "qiskit-addon-sqd is required. Install it with: pip install qiskit-addon-sqd"
     )
 
-# Import SBD Python bindings - can only import ONE backend per session due to pybind11 limitations
-# The backend selection must happen at import time, not runtime
+# Import SBD Python bindings using the init() approach from __init__.py
+# This avoids the pybind11 "already registered" conflict
 import os
 
-# Check which backend files exist
-_cpu_available = False
-_gpu_available = False
+# Use the sbd.init() API which properly handles backend selection
+from . import init as sbd_init, finalize as sbd_finalize
+from . import _device_module, _initialized
 
-try:
-    import importlib.util
-    import sys
-    
-    # Check if CPU backend file exists
-    cpu_spec = importlib.util.find_spec('sbd._core_cpu')
-    _cpu_available = cpu_spec is not None
-    
-    # Check if GPU backend file exists
-    gpu_spec = importlib.util.find_spec('sbd._core_gpu')
-    _gpu_available = gpu_spec is not None
-except:
-    pass
-
-if not _cpu_available and not _gpu_available:
-    raise ImportError("No SBD backend available (neither CPU nor GPU)")
-
-# Select which backend to import based on environment variable
-# NOTE: Due to pybind11 limitations, we can only import ONE backend per Python session
-backend_name = os.environ.get('SBD_BACKEND', 'auto').lower()
-
-_selected_backend = None
+# Backend will be set by init() call
 sbd = None
-
-if backend_name == 'gpu':
-    if _gpu_available:
-        from . import _core_gpu as sbd
-        _selected_backend = 'gpu'
-    else:
-        raise ImportError("GPU backend requested but not available")
-elif backend_name == 'cpu':
-    if _cpu_available:
-        from . import _core_cpu as sbd
-        _selected_backend = 'cpu'
-    else:
-        raise ImportError("CPU backend requested but not available")
-elif backend_name == 'auto':
-    # Auto-select: prefer GPU if available, otherwise CPU
-    if _gpu_available:
-        from . import _core_gpu as sbd
-        _selected_backend = 'gpu'
-    elif _cpu_available:
-        from . import _core_cpu as sbd
-        _selected_backend = 'cpu'
-else:
-    raise ValueError(f"Invalid SBD_BACKEND value: {backend_name}. Use 'cpu', 'gpu', or 'auto'")
-
-if sbd is None:
-    raise ImportError("Failed to import SBD backend")
-
-# Store backend info for reference
+_selected_backend = None
 _backend_info = {
-    'selected': _selected_backend,
-    'cpu_available': _cpu_available,
-    'gpu_available': _gpu_available,
+    'selected': None,
+    'cpu_available': False,
+    'gpu_available': False,
 }
+
+
+def _ensure_sbd_initialized():
+    """Ensure SBD is initialized, initialize with auto-detect if not."""
+    global sbd, _selected_backend, _backend_info
+    
+    if not _initialized:
+        # Auto-initialize with device from environment or auto-detect
+        device = os.environ.get('SBD_BACKEND', 'auto').lower()
+        if device not in ['cpu', 'gpu', 'auto']:
+            device = 'auto'
+        
+        try:
+            sbd_init(device=device, comm_backend='mpi')
+        except RuntimeError as e:
+            # Already initialized in another way, that's ok
+            pass
+    
+    # Get the device module that was initialized
+    from . import _device_module as dm, _initialized as init_flag
+    if init_flag and dm is not None:
+        sbd = dm
+        # Determine which backend was loaded
+        if 'gpu' in str(type(dm)):
+            _selected_backend = 'gpu'
+        else:
+            _selected_backend = 'cpu'
+        
+        _backend_info['selected'] = _selected_backend
+        _backend_info['cpu_available'] = True  # Assume available if we got here
+        _backend_info['gpu_available'] = _selected_backend == 'gpu'
+    
+    return sbd
 
 
 def _get_backend_module(use_gpu: bool):
     """
     Get the appropriate SBD backend module based on device configuration.
     
-    NOTE: Due to pybind11 limitations, the backend is selected at import time.
-    This function validates that the requested backend matches what was imported.
-    
     Args:
         use_gpu: Whether to use GPU backend
         
     Returns:
-        The backend module (always returns 'sbd')
+        The backend module
         
     Raises:
-        ImportError: If requested backend doesn't match imported backend
+        ImportError: If requested backend doesn't match initialized backend
     """
+    global sbd, _selected_backend
+    
+    # Ensure SBD is initialized
+    if sbd is None:
+        sbd = _ensure_sbd_initialized()
+    
+    # Validate the request matches what was initialized
     if use_gpu and _selected_backend != 'gpu':
         raise ImportError(
-            f"GPU backend requested but {_selected_backend.upper()} backend was imported. "
-            f"Set SBD_BACKEND=gpu environment variable before importing sbd module."
+            f"GPU backend requested but {_selected_backend.upper() if _selected_backend else 'UNKNOWN'} backend was initialized. "
+            f"Call sbd.init(device='gpu') before using sbd_solver, or set SBD_BACKEND=gpu environment variable."
         )
-    elif not use_gpu and _selected_backend != 'cpu':
+    elif not use_gpu and _selected_backend == 'gpu':
         raise ImportError(
-            f"CPU backend requested but {_selected_backend.upper()} backend was imported. "
-            f"Set SBD_BACKEND=cpu environment variable before importing sbd module."
+            f"CPU backend requested but GPU backend was initialized. "
+            f"Call sbd.init(device='cpu') before using sbd_solver, or set SBD_BACKEND=cpu environment variable."
         )
     
     return sbd
