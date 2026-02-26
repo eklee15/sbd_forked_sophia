@@ -42,7 +42,7 @@ def parse_args():
     # Device selection
     parser.add_argument('--device', choices=['auto', 'cpu', 'gpu'], default='auto',
                        help='Device to use (auto=detect, cpu=force CPU, gpu=force GPU)')
-    parser.add_argument('--max-memory-gb', type=int, default=-1,
+    parser.add_argument('--max_memory_gb', type=int, default=-1,
                        help='Maximum GPU memory in GB (-1=auto, GPU only)')
     
     # Molecule input
@@ -56,11 +56,11 @@ def parse_args():
     # SQD parameters
     parser.add_argument('--samples', type=int, default=10000,
                        help='Total number of random samples to generate')
-    parser.add_argument('--samples-per-batch', type=int, default=300,
+    parser.add_argument('--samples_per_batch', type=int, default=300,
                        help='Number of samples per batch')
-    parser.add_argument('--num-batches', type=int, default=5,
+    parser.add_argument('--num_batches', type=int, default=5,
                        help='Number of batches')
-    parser.add_argument('--max-iterations', type=int, default=5,
+    parser.add_argument('--max_iterations', type=int, default=5,
                        help='Maximum SQD iterations')
     
     # SBD solver parameters
@@ -68,21 +68,21 @@ def parse_args():
                        help='Diagonalization method: 0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham')
     parser.add_argument('--eps', type=float, default=1e-8,
                        help='SBD convergence tolerance')
-    parser.add_argument('--max-it', type=int, default=100,
+    parser.add_argument('--max_it', type=int, default=100,
                        help='SBD maximum iterations')
-    parser.add_argument('--max-nb', type=int, default=50,
+    parser.add_argument('--max_nb', type=int, default=50,
                        help='SBD maximum basis vectors')
-    parser.add_argument('--do-rdm', type=int, default=1, choices=[0, 1],
+    parser.add_argument('--do_rdm', type=int, default=1, choices=[0, 1],
                        help='Calculate RDM (0=density only, 1=full RDM)')
     parser.add_argument('--threshold', type=float, default=1e-4,
                        help='Carryover threshold')
     
     # MPI configuration
-    parser.add_argument('--adet-comm-size', type=int, default=1,
+    parser.add_argument('--adet_comm_size', type=int, default=1,
                        help='Alpha determinant communicator size')
-    parser.add_argument('--bdet-comm-size', type=int, default=1,
+    parser.add_argument('--bdet_comm_size', type=int, default=1,
                        help='Beta determinant communicator size')
-    parser.add_argument('--task-comm-size', type=int, default=1,
+    parser.add_argument('--task_comm_size', type=int, default=1,
                        help='Task communicator size')
     
     return parser.parse_args()

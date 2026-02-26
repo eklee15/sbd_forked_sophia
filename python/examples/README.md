@@ -57,9 +57,9 @@ mpirun -np 4 python sqd_integration_sbd.py \
 mpirun -np 8 python sqd_integration_sbd.py \
     --fcidump ../../data/h2o/fcidump.txt \
     --adetfile ../../data/h2o/h2o-1em4-alpha.txt \
-    --adet-comm-size 2 \
-    --bdet-comm-size 2 \
-    --task-comm-size 2 \
+    --adet_comm_size 2 \
+    --bdet_comm_size 2 \
+    --task_comm_size 2 \
     --device gpu
 ```
 
@@ -68,7 +68,7 @@ mpirun -np 8 python sqd_integration_sbd.py \
 - `--adetfile FILE` - Pre-computed determinants (optional, uses random sampling if omitted)
 - `--device {auto,cpu,gpu}` - Device selection
 - `--samples N` - Random samples (default: 10000, ignored if adetfile provided)
-- `--adet-comm-size N`, `--bdet-comm-size N`, `--task-comm-size N` - MPI decomposition
+- `--adet_comm_size N`, `--bdet_comm_size N`, `--task_comm_size N` - MPI decomposition
 - `--help` - See all options
 
 **Requirements:** `pip install qiskit-addon-sqd pyscf`

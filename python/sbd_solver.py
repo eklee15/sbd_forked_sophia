@@ -166,9 +166,17 @@ def solve_sci(
     
     mpi_rank = mpi_comm.Get_rank()
     
-    # Set up temp directory
+    # Set up temp directory - only rank 0 creates it, then broadcasts to all ranks
     temp_dir = temp_dir or tempfile.gettempdir()
-    sbd_dir = Path(tempfile.mkdtemp(prefix="sbd_files_", dir=temp_dir))
+    if mpi_rank == 0:
+        sbd_dir = Path(tempfile.mkdtemp(prefix="sbd_files_", dir=temp_dir))
+        sbd_dir_str = str(sbd_dir)
+    else:
+        sbd_dir_str = None
+    
+    # Broadcast the directory path to all ranks
+    sbd_dir_str = mpi_comm.bcast(sbd_dir_str, root=0)
+    sbd_dir = Path(sbd_dir_str)
     
     try:
         # Write FCIDUMP file
@@ -181,6 +189,8 @@ def solve_sci(
                 norb,
                 nelec,
             )
+        
+        # Wait for rank 0 to finish writing FCIDUMP file
         mpi_comm.Barrier()
         
         # Convert CI strings to SBD determinant format
