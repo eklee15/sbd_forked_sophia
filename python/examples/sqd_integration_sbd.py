@@ -309,36 +309,42 @@ def test_molecule_with_sbd(molecule_data, args, device_config=None):
         seed=rand_seed,
     )
     
-    # Print final results
-    print("\n" + "="*60)
-    print(f"FINAL RESULTS - {molecule_name}")
-    print("="*60)
-    if exact_energy is not None:
-        print(f"Exact energy:     {exact_energy:.8f}")
-        print(f"Estimated energy: {result.energy + nuclear_repulsion_energy:.8f}")
-        print(f"Error:            {abs(result.energy + nuclear_repulsion_energy - exact_energy):.8e}")
-    else:
-        print(f"Estimated energy: {result.energy + nuclear_repulsion_energy:.8f}")
-    print()
+    # Get MPI rank to control output
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
     
-    # Print convergence history
-    if result_history:
-        print("Convergence History:")
-        print("-" * 60)
-        for i, results in enumerate(result_history):
-            energies = [r.energy + nuclear_repulsion_energy for r in results]
-            min_energy = min(energies)
-            max_energy = max(energies)
-            avg_energy = np.mean(energies)
-            print(f"Iteration {i+1}: min={min_energy:.8f}, max={max_energy:.8f}, avg={avg_energy:.8f}")
-    
-    # Check if result is reasonable (within 1 mHa of exact)
-    if exact_energy is not None:
-        error = abs(result.energy + nuclear_repulsion_energy - exact_energy)
-        if error < 0.001:
-            print("\n✓ Test PASSED: Energy within 1 mHa of exact value")
+    # Only rank 0 prints final results (since only rank 0 runs the SQD loop with MPI-aware qiskit-addon-sqd)
+    if rank == 0:
+        # Print final results
+        print("\n" + "="*60)
+        print(f"FINAL RESULTS - {molecule_name}")
+        print("="*60)
+        if exact_energy is not None:
+            print(f"Exact energy:     {exact_energy:.8f}")
+            print(f"Estimated energy: {result.energy + nuclear_repulsion_energy:.8f}")
+            print(f"Error:            {abs(result.energy + nuclear_repulsion_energy - exact_energy):.8e}")
         else:
-            print(f"\n✗ Test FAILED: Energy error {error:.6f} Ha exceeds threshold")
+            print(f"Estimated energy: {result.energy + nuclear_repulsion_energy:.8f}")
+        print()
+        
+        # Print convergence history
+        if result_history:
+            print("Convergence History:")
+            print("-" * 60)
+            for i, results in enumerate(result_history):
+                energies = [r.energy + nuclear_repulsion_energy for r in results]
+                min_energy = min(energies)
+                max_energy = max(energies)
+                avg_energy = np.mean(energies)
+                print(f"Iteration {i+1}: min={min_energy:.8f}, max={max_energy:.8f}, avg={avg_energy:.8f}")
+        
+        # Check if result is reasonable (within 1 mHa of exact)
+        if exact_energy is not None:
+            error = abs(result.energy + nuclear_repulsion_energy - exact_energy)
+            if error < 0.001:
+                print("\n✓ Test PASSED: Energy within 1 mHa of exact value")
+            else:
+                print(f"\n✗ Test FAILED: Energy error {error:.6f} Ha exceeds threshold")
     
     return result
 
