@@ -267,7 +267,7 @@ if build_gpu:
         language='c++',
         extra_compile_args=[
             "-DSBD_THRUST",
-            "-DSBD_TRADMODE"
+            "-DSBD_TRADMODE",
             "-mp",
             "-cuda",
             "-fast",
