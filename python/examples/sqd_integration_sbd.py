@@ -27,6 +27,7 @@ import numpy as np
 from pyscf import ao2mo, tools
 from mpi4py import MPI
 
+from qiskit.primitives import BitArray
 from qiskit_addon_sqd.counts import generate_bit_array_uniform
 from qiskit_addon_sqd.fermion import SCIResult, diagonalize_fermionic_hamiltonian
 from functools import partial
@@ -129,15 +130,22 @@ def load_determinants_from_file(adetfile, bdetfile, norb):
         beta_dets = alpha_dets.copy()
     
     # Create bit array by combining alpha and beta determinants
-    # Format: each row is [alpha_bits | beta_bits] as a single integer
-    bit_array = []
+    # Format: each row is [beta_bits | alpha_bits] as boolean array
+    # qiskit-addon-sqd convention: [b_N, ..., b_0, a_N, ..., a_0]
+    # i.e., beta bits on the left (high indices), alpha bits on the right (low indices)
+    num_bits = 2 * norb
+    rows = []
     for alpha in alpha_dets:
         for beta in beta_dets:
-            # Combine: alpha in lower bits, beta in upper bits
-            combined = alpha | (beta << norb)
-            bit_array.append(combined)
-    
-    return np.array(bit_array, dtype=np.int64)
+            # Build boolean row: first norb bits = beta, last norb bits = alpha
+            row = np.zeros(num_bits, dtype=bool)
+            for i in range(norb):
+                row[i] = bool((beta >> (norb - 1 - i)) & 1)
+                row[norb + i] = bool((alpha >> (norb - 1 - i)) & 1)
+            rows.append(row)
+
+    bool_matrix = np.array(rows, dtype=bool)
+    return BitArray.from_bool_array(bool_matrix)
 
 
 def get_molecule_data(args):
@@ -176,12 +184,15 @@ def get_molecule_data(args):
     nelec_a = nelec_total // 2
     nelec_b = nelec_total - nelec_a
     
-    # Try to guess molecule name from filename
-    molecule_name = fcidump_path.stem.upper()
-    
-    # Known exact energies for validation
+    # Try to guess molecule name from parent directory or filename
+    parent_dir = fcidump_path.parent.name.upper()
+    stem = fcidump_path.stem.upper()
+    molecule_name = parent_dir if stem == 'FCIDUMP' else stem
+
+    # Known exact energies for validation (electronic energy from FCI/PySCF)
     exact_energies = {
-        'N2_FCI': -109.10288938,
+        'N2': -109.048742,
+        'N2_FCI': -109.048742,
         'H2O': -76.24,
     }
     exact_energy = exact_energies.get(molecule_name, None)
@@ -232,7 +243,7 @@ def test_molecule_with_sbd(molecule_data, args, device_config=None):
         # Load determinants from file
         print(f"Loading determinants from {args.adetfile}...")
         bit_array = load_determinants_from_file(args.adetfile, args.bdetfile, num_orbitals)
-        print(f"Loaded {len(bit_array)} determinants")
+        print(f"Loaded {bit_array.num_shots} determinants")
     else:
         # Generate random samples
         print(f"Generating {args.samples} random samples...")
