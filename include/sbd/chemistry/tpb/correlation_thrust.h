@@ -11,10 +11,7 @@ namespace sbd
 template <typename ElemT>
 class CorrelationKernelBase : public MultKernelBase<ElemT> {
 protected:
-    ElemT* onebody;
-    ElemT* twobody;
-    size_t onebody_size;
-    size_t twobody_size;
+    CorrelationKernels<ElemT> correlation;
 public:
     CorrelationKernelBase() {}
 
@@ -22,117 +19,12 @@ public:
                         const thrust::device_vector<ElemT>& v_wb,
                         const thrust::device_vector<ElemT>& v_t,
                         thrust::device_vector<ElemT>& b1,
-                        thrust::device_vector<ElemT>& b2) : MultKernelBase<ElemT>(v_wb, v_t, data)
+                        thrust::device_vector<ElemT>& b2)
+                         : MultKernelBase<ElemT>(v_wb, v_t, data),
+                           correlation(data.bit_length(), data.norbs(),  data.I0, data.I1, data.I2, b1, b2)
     {
-        onebody = (ElemT*)thrust::raw_pointer_cast(b1.data());
-        twobody = (ElemT*)thrust::raw_pointer_cast(b2.data());
-        onebody_size = this->norbs * this->norbs;
-        twobody_size = this->norbs * this->norbs * this->norbs * this->norbs;
     }
 
-    /**
-         Function for adding diagonal contribution
-    */
-    __device__ __host__ void ZeroDiffCorrelation(const size_t* det, ElemT WeightI)
-    {
-        for (int i = 0; i < 2 * this->norbs; i++) {
-            if (this->getocc(det, i)) {
-                int oi = i / 2;
-                int si = i % 2;
-                atomicAdd(onebody + si * onebody_size + oi + this->norbs * oi, Conjugate(WeightI) * WeightI);
-                for (int j = i + 1; j < 2 * this->norbs; j++) {
-                    if (this->getocc(det, j)) {
-                        int oj = j / 2;
-                        int sj = j % 2;
-                        atomicAdd(twobody + (si + 2 * sj) * twobody_size + (oi + this->norbs * oj + this->norbs * this->norbs * oi + this->norbs * this->norbs * this->norbs * oj), Conjugate(WeightI) * WeightI);
-                        atomicAdd(twobody + (sj + 2 * si) * twobody_size + (oj + this->norbs * oi + this->norbs * this->norbs * oj + this->norbs * this->norbs * this->norbs * oi), Conjugate(WeightI) * WeightI);
-                        if (si == sj) {
-                            atomicAdd(twobody + (si + 2 * sj) * twobody_size + (oi + this->norbs * oj + this->norbs * this->norbs * oj + this->norbs * this->norbs * this->norbs * oi), -Conjugate(WeightI) * WeightI);
-                            atomicAdd(twobody + (sj + 2 * si) * twobody_size + (oj + this->norbs * oi + this->norbs * this->norbs * oi + this->norbs * this->norbs * this->norbs * oj), -Conjugate(WeightI) * WeightI);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-        Function for adding one-occupation different contribution
-    */
-    __device__ __host__ void OneDiffCorrelation(const size_t* det,
-                            const ElemT WeightI,
-                            const ElemT WeightJ,
-                            int i,
-                            int a)
-    {
-        double sgn = 1.0;
-        this->parity(det, std::min(i, a), std::max(i, a), sgn);
-        int oi = i / 2;
-        int si = i % 2;
-        int oa = a / 2;
-        int sa = a % 2;
-        atomicAdd(onebody + si * onebody_size + (oi + this->norbs * oa), Conjugate(WeightI) * WeightJ * ElemT(sgn));
-        size_t one = 1;
-        for (int x = 0; x < this->D_size; x++) {
-            size_t bits = det[x];
-            for (int pos = 0; pos < this->bit_length; pos++) {
-                if ((bits & 1ULL) == 1ULL) {
-                    int soj = x * this->bit_length + pos;
-                    int oj = soj / 2;
-                    int sj = soj % 2;
-
-                    atomicAdd(twobody + (si + 2 * sj) * twobody_size + (oa + oj * this->norbs + oi * this->norbs * this->norbs + oj * this->norbs * this->norbs * this->norbs), Conjugate(WeightI) * WeightJ * ElemT(sgn));
-                    atomicAdd(twobody + (sj + 2 * si) * twobody_size + (oj + oa * this->norbs + oj * this->norbs * this->norbs + oi * this->norbs * this->norbs * this->norbs), Conjugate(WeightI) * WeightJ * ElemT(sgn));
-
-                    if (si == sj) {
-                        atomicAdd(twobody + (si + 2 * sj) * twobody_size + (oa + oj * this->norbs + oj * this->norbs * this->norbs + oi * this->norbs * this->norbs * this->norbs), Conjugate(WeightI) * WeightJ * ElemT(-sgn));
-                        atomicAdd(twobody + (sj + 2 * si) * twobody_size + (oj + oa * this->norbs + oi * this->norbs * this->norbs + oj * this->norbs * this->norbs * this->norbs), Conjugate(WeightI) * WeightJ * ElemT(-sgn));
-                    }
-                }
-                bits >>= 1;
-            }
-        }
-    }
-
-    /**
-        Function for adding two-occupation different contribution
-    */
-    __device__ __host__ void TwoDiffCorrelation(const size_t* det,
-                            const ElemT WeightI,
-                            const ElemT WeightJ,
-                            int i,
-                            int j,
-                            int a,
-                            int b)
-    {
-        double sgn = 1.0;
-        int I = std::min(i, j);
-        int J = std::max(i, j);
-        int A = std::min(a, b);
-        int B = std::max(a, b);
-        this->parity(det, std::min(I, A), std::max(I, A), sgn);
-        this->parity(det, std::min(J, B), std::max(J, B), sgn);
-        if (A > J || B < I)
-            sgn *= -1.0;
-        int oi = I / 2;
-        int si = I % 2;
-        int oa = A / 2;
-        int sa = A % 2;
-        int oj = J / 2;
-        int sj = J % 2;
-        int ob = B / 2;
-        int sb = B % 2;
-
-        if (si == sa) {
-            atomicAdd(twobody + (si + 2 * sj) * twobody_size + (oa + this->norbs * ob + this->norbs * this->norbs * (oi + this->norbs * oj)), ElemT(sgn) * Conjugate(WeightI) * WeightJ);
-            atomicAdd(twobody + (sj + 2 * si) * twobody_size + (ob + this->norbs * oa + this->norbs * this->norbs * (oj + this->norbs * oi)), ElemT(sgn) * Conjugate(WeightI) * WeightJ);
-        }
-
-        if (si == sb) {
-            atomicAdd(twobody + (si + 2 * sj) * twobody_size + (oa + this->norbs * ob + this->norbs * this->norbs * (oj + this->norbs * oi)), ElemT(-sgn) * Conjugate(WeightI) * WeightJ);
-            atomicAdd(twobody + (sj + 2 * si) * twobody_size + (ob + this->norbs * oa + this->norbs * this->norbs * (oi + this->norbs * oj)), ElemT(-sgn) * Conjugate(WeightI) * WeightJ);
-        }
-    }
 };
 
 template <typename ElemT>
@@ -163,7 +55,7 @@ public:
         if (i + offset < braAlphaSize * braBetaSize) {
             if( ((i + offset) % this->mpi_size_h) == this->mpi_rank_h ) {
                 size_t* DetI = this->det_I + (i + offset) * this->D_size;
-                this->ZeroDiffCorrelation(DetI, this->Wb[i + offset]);
+                this->correlation.ZeroDiffCorrelation(DetI, this->Wb[i + offset]);
             }
         }
     }
@@ -201,7 +93,7 @@ public:
 
         if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
             this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
-            this->ZeroDiffCorrelation(DetI, this->Wb[braIdx]);
+            this->correlation.ZeroDiffCorrelation(DetI, this->Wb[braIdx]);
         }
     }
 };
@@ -247,7 +139,7 @@ public:
                 ElemT WeightI = this->Wb[braIdx];
                 ElemT WeightJ = this->T[ketIdx];
 
-                this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                this->correlation.TwoDiffCorrelation(DetI, WeightI, WeightJ,
                                     helper.SinglesAlphaCrAnSM[j], helper.SinglesBetaCrAnSM[k],
                                     helper.SinglesAlphaCrAnSM[j + helper.size_single_alpha], helper.SinglesBetaCrAnSM[k + helper.size_single_beta]);
             }
@@ -294,7 +186,7 @@ public:
                 size_t* DetI = this->det_I + ((ia - helper.braAlphaStart) * this->bdets_size + ib - helper.braBetaStart) * this->D_size;
                 ElemT WeightI = this->Wb[braIdx];
                 ElemT WeightJ = this->T[ketIdx];
-                this->OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesAlphaCrAnSM[j], helper.SinglesAlphaCrAnSM[j + helper.size_single_alpha]);
+                this->correlation.OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesAlphaCrAnSM[j], helper.SinglesAlphaCrAnSM[j + helper.size_single_alpha]);
             }
         }
     }
@@ -339,7 +231,7 @@ public:
                 ElemT WeightI = this->Wb[braIdx];
                 ElemT WeightJ = this->T[ketIdx];
 
-                this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                this->correlation.TwoDiffCorrelation(DetI, WeightI, WeightJ,
                                     helper.DoublesAlphaCrAnSM[j], helper.DoublesAlphaCrAnSM[j + helper.size_double_alpha],
                                     helper.DoublesAlphaCrAnSM[j + 2 * helper.size_double_alpha], helper.DoublesAlphaCrAnSM[j + 3 * helper.size_double_alpha]);
             }
@@ -385,7 +277,7 @@ public:
                 size_t* DetI = this->det_I + ((ia - helper.braAlphaStart) * this->bdets_size + ib - helper.braBetaStart) * this->D_size;
                 ElemT WeightI = this->Wb[braIdx];
                 ElemT WeightJ = this->T[ketIdx];
-                this->OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesBetaCrAnSM[k], helper.SinglesBetaCrAnSM[k + helper.size_single_beta]);
+                this->correlation.OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesBetaCrAnSM[k], helper.SinglesBetaCrAnSM[k + helper.size_single_beta]);
             }
         }
     }
@@ -430,7 +322,7 @@ public:
                 ElemT WeightI = this->Wb[braIdx];
                 ElemT WeightJ = this->T[ketIdx];
 
-                this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                this->correlation.TwoDiffCorrelation(DetI, WeightI, WeightJ,
                                             helper.DoublesBetaCrAnSM[k], helper.DoublesBetaCrAnSM[k + helper.size_double_beta],
                                             helper.DoublesBetaCrAnSM[k + 2 * helper.size_double_beta], helper.DoublesBetaCrAnSM[k + 3 * helper.size_double_beta]);
             }
@@ -480,7 +372,7 @@ public:
                     size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
                                     + jb - helper.ketBetaStart;
                     ElemT WeightJ = this->T[ketIdx];
-                    this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                    this->correlation.TwoDiffCorrelation(DetI, WeightI, WeightJ,
                                         helper.SinglesAlphaCrAnSM[j], helper.SinglesBetaCrAnSM[k],
                                         helper.SinglesAlphaCrAnSM[j + helper.size_single_alpha], helper.SinglesBetaCrAnSM[k + helper.size_single_beta]);
                 }
@@ -529,7 +421,7 @@ public:
                 size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
                                 + jb - helper.ketBetaStart;
                 ElemT WeightJ = this->T[ketIdx];
-                this->OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesBetaCrAnSM[k], helper.SinglesBetaCrAnSM[k + helper.size_single_alpha]);
+                this->correlation.OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesBetaCrAnSM[k], helper.SinglesBetaCrAnSM[k + helper.size_single_alpha]);
             }
             for (size_t k = helper.DoublesFromBetaOffset[b]; k < helper.DoublesFromBetaOffset[b + 1]; k++) {
                 size_t ja = ia;
@@ -537,7 +429,7 @@ public:
                 size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
                                 + jb - helper.ketBetaStart;
                 ElemT WeightJ = this->T[ketIdx];
-                this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                this->correlation.TwoDiffCorrelation(DetI, WeightI, WeightJ,
                                         helper.DoublesBetaCrAnSM[k], helper.DoublesBetaCrAnSM[k + helper.size_double_alpha],
                                         helper.DoublesBetaCrAnSM[k + 2 * helper.size_double_alpha], helper.DoublesBetaCrAnSM[k + 3 * helper.size_double_alpha]);
            }
@@ -585,7 +477,7 @@ public:
                 size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
                                 + jb - helper.ketBetaStart;
                 ElemT WeightJ = this->T[ketIdx];
-                this->OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesAlphaCrAnSM[j], helper.SinglesAlphaCrAnSM[j + helper.size_single_beta]);
+                this->correlation.OneDiffCorrelation(DetI, WeightI, WeightJ, helper.SinglesAlphaCrAnSM[j], helper.SinglesAlphaCrAnSM[j + helper.size_single_beta]);
             }
             for (size_t j = helper.DoublesFromAlphaOffset[a]; j < helper.DoublesFromAlphaOffset[a + 1]; j++) {
                 size_t ja = helper.DoublesFromAlphaKetIndex[j];
@@ -593,7 +485,7 @@ public:
                 size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
                                 + jb - helper.ketBetaStart;
                 ElemT WeightJ = this->T[ketIdx];
-                this->TwoDiffCorrelation(DetI, WeightI, WeightJ,
+                this->correlation.TwoDiffCorrelation(DetI, WeightI, WeightJ,
                                     helper.DoublesAlphaCrAnSM[j], helper.DoublesAlphaCrAnSM[j + helper.size_double_beta],
                                     helper.DoublesAlphaCrAnSM[j + 2 * helper.size_double_beta], helper.DoublesAlphaCrAnSM[j + 3 * helper.size_double_beta]);
             }

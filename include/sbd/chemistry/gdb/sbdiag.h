@@ -452,9 +452,13 @@ namespace sbd {
 		    << " sbd: start rdm calculation" << std::endl;
 	}
 	auto time_start_rdm = std::chrono::high_resolution_clock::now();
+#ifdef SBD_THRUST
+	device_mult.correlation(w,one_p_rdm,two_p_rdm);
+#else
 	Correlation(w,det,bit_length,static_cast<size_t>(L),
 		    idxmap,exidx,h_comm,b_comm,t_comm,
 		    one_p_rdm,two_p_rdm);
+#endif
 	density.resize(2*L);
 	for(size_t io=0; io < L; io++) {
 	  density[2*io+0] = GetReal(one_p_rdm[0][io+L*io]);

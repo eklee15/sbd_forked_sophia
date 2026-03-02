@@ -6,6 +6,7 @@
 #ifdef SBD_THRUST
 #include "sbd/chemistry/basic/integrals_thrust.h"
 #include "sbd/chemistry/basic/determinants_thrust.h"
+#include "sbd/chemistry/basic/correlation_thrust.h"
 #include "sbd/framework/mpi_utility_thrust.h"
 #include "sbd/chemistry/basic/mult.h"
 #include "sbd/chemistry/basic/davidson_thrust.h"

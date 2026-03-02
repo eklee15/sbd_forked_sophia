@@ -67,6 +67,11 @@ public:
     void run(const thrust::device_vector<ElemT> &hii,
                     const thrust::device_vector<ElemT> &Wk,
                     thrust::device_vector<ElemT> &Wb) override;
+
+
+	void correlation(const std::vector<ElemT> & w,
+				std::vector<std::vector<ElemT>> & onebody_out,
+				std::vector<std::vector<ElemT>> & twobody_out);
 };
 
 // contructor for Mult data
