@@ -247,12 +247,14 @@ int main(int argc, char * argv[]) {
 
     if( one_p_rdm.size() != 0 ) {
 
+      double zerobody = 0.0;
       double onebody = 0.0;
       double twobody = 0.0;
       double I0;
       sbd::oneInt<double> I1;
       sbd::twoInt<double> I2;
       sbd::SetupIntegrals(fcidump,L,N,I0,I1,I2);
+      zerobody = I0;
 
       auto time_start_dump = std::chrono::high_resolution_clock::now();
       std::ofstream ofs_one("1pRDM.txt");
@@ -292,9 +294,11 @@ int main(int argc, char * argv[]) {
       elapsed_dump_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_dump-time_start_dump).count();
       elapsed_dump = 0.000001 * elapsed_dump_count;
       std::cout << " Elapse time for dumping two-particle rdm = " << elapsed_dump << std::endl;
+      std::cout << " Zero-Body energy = " << zerobody << std::endl;
       std::cout << " One-Body energy = " << onebody << std::endl;
       std::cout << " Two-Body energy = " << twobody << std::endl;
       std::cout << " One-Body + Two-Body energy = " << onebody + twobody << std::endl;
+      std::cout << " Zero-Body + One-Body + Two-Body energy = " << zerobody + onebody + twobody << std::endl;
 
     }
   }
