@@ -7,11 +7,6 @@
 
 namespace sbd {
 
-#include "sbd/chemistry/tpb/helper.h"
-
-//#include <thrust/device_vector.h>
-#include <thrust/host_vector.h>
-
 
 template <typename ElemT>
 class TaskHelpersThrust {

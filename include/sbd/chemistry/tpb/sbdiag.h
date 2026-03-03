@@ -141,7 +141,10 @@ namespace sbd {
       int N;
 
       int method = sbd_data.method;
-      int max_it = sbd_data.max_it;
+#ifdef SBD_THRUST
+	  method = method & 1;
+#endif
+	  int max_it = sbd_data.max_it;
       int max_nb = sbd_data.max_nb;
       double eps = sbd_data.eps;
       double max_time = sbd_data.max_time;
@@ -213,9 +216,10 @@ namespace sbd {
       }
 
 #ifdef SBD_THRUST
-	  // data storage for thrust implementation
-	  MultDataThrust<double> device_data;
+	// multiplyer class for TPB on Thrust
+	MultTPBThrust<double> device_mult;
 #endif
+
       /**
 	 Diagonalization
       */
@@ -232,17 +236,15 @@ namespace sbd {
 				helper,I0,I1,I2,hii,
 				h_comm,b_comm,t_comm);
 #ifdef SBD_THRUST
-	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2,
-	                 sbd_data.use_precalculated_dets, sbd_data.max_memory_gb_for_determinants);
+	device_mult.Init(adet, bdet, bit_length, static_cast<size_t>(L),
+					adet_comm_size,bdet_comm_size, helper, I0, I1, I2,
+					h_comm,b_comm,t_comm,
+	                sbd_data.use_precalculated_dets, sbd_data.max_memory_gb_for_determinants);
 	if( method == 0 ) {
-		sbd::Davidson(hii, W, device_data,
-				adet_comm_size, bdet_comm_size,
-				h_comm,b_comm,t_comm,
+		sbd::Davidson(hii, W, device_mult,
 				max_it,max_nb,eps,max_time);
 	} else {
-		sbd::Lanczos(hii, W, device_data,
-				adet_comm_size, bdet_comm_size,
-				h_comm,b_comm,t_comm,
+		sbd::Lanczos(hii, W, device_mult,
 				max_it,max_nb,eps);
 	}
 #else
@@ -284,9 +286,19 @@ namespace sbd {
 
 	auto time_start_mult = std::chrono::high_resolution_clock::now();
 #ifdef SBD_THRUST
-	sbd::mult(hii, W, C, device_data,
-		  adet_comm_size, bdet_comm_size,
-		  h_comm, b_comm, t_comm);
+	// copyin hii
+    thrust::device_vector<double> hii_dev(hii.size());
+    thrust::copy_n(hii.begin(), hii.size(), hii_dev.begin());
+
+    // copyin W
+    thrust::device_vector<double> W_dev(W.size());
+    thrust::copy_n(W.begin(), W.size(), W_dev.begin());
+
+    thrust::device_vector<double> C_dev(C.size(), 0.0);
+
+	device_mult.run(hii_dev, W_dev, C_dev);
+
+	thrust::copy_n(C_dev.begin(), C_dev.size(), C.begin());
 #else
 	sbd::mult(hii,W,C,adet,bdet,bit_length,static_cast<size_t>(L),
 		  adet_comm_size,bdet_comm_size,helper,
@@ -318,15 +330,6 @@ namespace sbd {
 	auto time_start_diag = std::chrono::high_resolution_clock::now();
 	auto time_start_mkham = std::chrono::high_resolution_clock::now();
 	std::vector<double> hii;
-
-#ifdef SBD_THRUST
-	// initialize hii
-	sbd::makeQChamDiagTerms(adet, bdet, bit_length, L,
-				helper, I0, I1, I2, hii,
-				h_comm, b_comm, t_comm);
-	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2,
- 		             sbd_data.use_precalculated_dets, sbd_data.max_memory_gb_for_determinants);
-#else
 	std::vector<std::vector<size_t*>> ih;
 	std::vector<std::vector<size_t*>> jh;
 	std::vector<std::vector<double*>> hij;
@@ -341,7 +344,6 @@ namespace sbd {
 		       hii,ih,jh,hij,len,tasktype,adetshift,bdetshift,
 		       sharedSizeT,sharedElemT,
 		       h_comm,b_comm,t_comm);
-#endif
     auto time_end_mkham = std::chrono::high_resolution_clock::now();
 	auto elapsed_mkham_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mkham-time_start_mkham).count();
 	double elapsed_mkham = 0.000001 * elapsed_mkham_count;
@@ -351,19 +353,6 @@ namespace sbd {
 
 	auto time_start_davidson = std::chrono::high_resolution_clock::now();
 	sbd::BasisInitVector(W,adet,bdet,adet_comm_size,bdet_comm_size,h_comm,b_comm,t_comm,init);
-#ifdef SBD_THRUST
-	if( method < 2 ) {
-		sbd::Davidson(hii, W, device_data,
-				adet_comm_size, bdet_comm_size,
-				h_comm,b_comm,t_comm,
-				max_it,max_nb,eps,max_time);
-	} else {
-		sbd::Lanczos(hii, W, device_data,
-				adet_comm_size, bdet_comm_size,
-				h_comm,b_comm,t_comm,
-				max_it,max_nb,eps);
-	}
-#else
 	if( method == 1 ) {
 	  sbd::Davidson(hii,ih,jh,hij,len,tasktype,
 			adetshift,bdetshift,adet_comm_size,bdet_comm_size,
@@ -377,7 +366,6 @@ namespace sbd {
 		       h_comm,b_comm,t_comm,
 		       max_it,max_nb,bit_length,eps);
 	}
-#endif
 	auto time_end_davidson = std::chrono::high_resolution_clock::now();
 	auto elapsed_davidson_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_davidson-time_start_davidson).count();
 	double elapsed_davidson = 0.000001 * elapsed_davidson_count;
@@ -399,16 +387,10 @@ namespace sbd {
 	std::vector<double> C(W.size(),0.0);
 
 	auto time_start_mult = std::chrono::high_resolution_clock::now();
-#ifdef SBD_THRUST
-	sbd::mult(hii, W, C, device_data,
-		  adet_comm_size, bdet_comm_size,
-		  h_comm, b_comm, t_comm);
-#else
 	sbd::mult(hii,ih,jh,hij,len,
 		  tasktype,adetshift,bdetshift,
 		  adet_comm_size,bdet_comm_size,
 		  W,C,bit_length,h_comm,b_comm,t_comm);
-#endif
 	auto time_end_mult = std::chrono::high_resolution_clock::now();
 	auto elapsed_mult_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult-time_start_mult).count();
 	double elapsed_mult = 0.000001 * elapsed_mult_count;
@@ -473,9 +455,7 @@ namespace sbd {
 	auto time_start_meas = std::chrono::high_resolution_clock::now();
 #ifdef SBD_THRUST
 	Correlation(W,
-		adet_comm_size, bdet_comm_size,
-		device_data,
-		h_comm, b_comm, t_comm,
+		device_mult,
 		one_p_rdm,
 	    two_p_rdm);
 #else

@@ -24,7 +24,7 @@ namespace sbd {
 	      MPI_Comm h_comm,
 	      MPI_Comm b_comm,
 	      MPI_Comm t_comm) {
-      
+
       int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
       int mpi_rank_h; MPI_Comm_rank(h_comm,&mpi_rank_h);
       int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
@@ -164,7 +164,7 @@ namespace sbd {
 
 	      if( exidx[task].SelfFromAdetLen[iast] != 0 ) {
 		size_t jast = exidx[task].SelfFromAdetSM[iast][0];
-		
+
 		// single beta excitations
 		for(size_t jb=0; jb < exidx[task].SinglesFromBdetLen[ibst]; jb++) {
 		  size_t jbst = exidx[task].SinglesFromBdetSM[ibst][jb];
@@ -219,7 +219,7 @@ namespace sbd {
 		    wb[idet] += eij * twk[jdet];
 		  }
 		}
-		
+
 	      } // if there are same alpha
 
 	    } // corresponding beta string loop for bra-side basis
@@ -238,12 +238,12 @@ namespace sbd {
 	  // std::swap(rdet,tdet);
 	  // sbd::MpiSlide(rdet,tdet,slide,b_comm);
 	}
-	
+
       } // end task for loop
 
       MpiAllreduce(wb,MPI_SUM,t_comm);
       MpiAllreduce(wb,MPI_SUM,h_comm);
-      
+
     } // end function for mult
 
     template <typename ElemT>
@@ -302,9 +302,9 @@ namespace sbd {
       sbd::MpiAllreduce(wb,MPI_SUM,t_comm);
       sbd::MpiAllreduce(wb,MPI_SUM,h_comm);
     }
-    
+
   } // end namespace gdb
-  
+
 } // end namespace sbd
 
 #endif
