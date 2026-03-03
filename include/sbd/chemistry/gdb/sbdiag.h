@@ -18,6 +18,7 @@ namespace sbd {
       int max_it = 1;
       int max_nb = 10;
       double eps = 1.0e-4;
+      double max_time = 86400.0;
       int init = 0;
       int do_shuffle = 0;
       int do_rdm = 0;
@@ -136,9 +137,13 @@ namespace sbd {
       int L;
       int N;
       int method = sbd_data.method;
-      int max_it = sbd_data.max_it;
+#ifdef SBD_THRUST
+	  method &= 1;
+#endif
+	  int max_it = sbd_data.max_it;
       int max_nb = sbd_data.max_nb;
       double eps = sbd_data.eps;
+      double max_time = sbd_data.max_time;
       int init = sbd_data.init;
       int do_shuffle = sbd_data.do_shuffle;
       int do_rdm = sbd_data.do_rdm;
@@ -148,7 +153,7 @@ namespace sbd {
       /**
 	 Setup system parameters from fcidump
       */
-      if( mpi_rank == 0 ) {
+	  if( mpi_rank == 0 ) {
 	std::cout << " " << make_timestamp()
 		  << " sbd: start integral construction" << std::endl;
       }
@@ -221,6 +226,10 @@ namespace sbd {
       /**
 	 Diagonalization
       */
+#ifdef SBD_THRUST
+	// multiplyer class for TPB on Thrust
+	MultGDBThrust<double> device_mult;
+#endif
       if( method == 0 ) {
 
 	if( mpi_rank == 0 ) {
@@ -250,11 +259,19 @@ namespace sbd {
 		    << " sbd: start davidson" << std::endl;
 	}
 	auto time_start_david = std::chrono::high_resolution_clock::now();
+#ifdef SBD_THRUST
+	device_mult.Init(bit_length,static_cast<size_t>(L),det,
+					idxmap,exidx,I0,I1,I2,
+		 			h_comm,b_comm,t_comm);
+	sbd::Davidson(hii, w, device_mult,
+			max_it,max_nb,eps,max_time);
+#else
 	Davidson(hii,w,det,bit_length,static_cast<size_t>(L),
 		 idxmap,exidx,I0,I1,I2,
 		 h_comm,b_comm,t_comm,
 		 max_it,max_nb,eps);
-	auto time_end_david = std::chrono::high_resolution_clock::now();
+#endif
+    auto time_end_david = std::chrono::high_resolution_clock::now();
 	auto elapsed_david_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_david-time_start_david).count();
 	auto elapsed_diag_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_david-time_start_mkham).count();
 	double elapsed_david = 1.0e-6 * elapsed_david_count;
@@ -275,6 +292,22 @@ namespace sbd {
 		    << " sbd: start Hamiltonian expectation value" << std::endl;
 	}
 	auto time_start_mult = std::chrono::high_resolution_clock::now();
+#ifdef SBD_THRUST
+	// copyin hii
+    thrust::device_vector<double> hii_dev(hii.size());
+    thrust::copy_n(hii.begin(), hii.size(), hii_dev.begin());
+
+    // copyin W
+    thrust::device_vector<double> w_dev(w.size());
+    thrust::copy_n(w.begin(), w.size(), w_dev.begin());
+
+    thrust::device_vector<double> v(w.size(), 0.0);
+
+	device_mult.run(hii_dev, w_dev, v);
+
+	ElemT E;
+	InnerProduct(w_dev,v,E,b_comm);
+#else
 	std::vector<ElemT> v(w.size(),ElemT(0.0));
 	mult(hii,w,v,bit_length,static_cast<size_t>(L),det,
 	     idxmap,exidx,I0,I1,I2,
@@ -282,6 +315,7 @@ namespace sbd {
 	ElemT E;
 	InnerProduct(w,v,E,b_comm);
 	energy = GetReal(E);
+#endif
 	auto time_end_mult = std::chrono::high_resolution_clock::now();
 	auto elapsed_mult_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult-time_start_mult).count();
 	double elapsed_mult = 1.0e-6 * elapsed_mult_count;
@@ -301,7 +335,7 @@ namespace sbd {
 		    << " sbd: start diagonalization" << std::endl;
 	  std::cout << " " << make_timestamp()
 		    << " sbd: start make Hamiltonian" << std::endl;
-	  
+
 	}
 	auto time_start_mkham = std::chrono::high_resolution_clock::now();
 	std::vector<ElemT> hii;
@@ -418,9 +452,13 @@ namespace sbd {
 		    << " sbd: start rdm calculation" << std::endl;
 	}
 	auto time_start_rdm = std::chrono::high_resolution_clock::now();
+#ifdef SBD_THRUST
+	device_mult.correlation(w,one_p_rdm,two_p_rdm);
+#else
 	Correlation(w,det,bit_length,static_cast<size_t>(L),
 		    idxmap,exidx,h_comm,b_comm,t_comm,
 		    one_p_rdm,two_p_rdm);
+#endif
 	density.resize(2*L);
 	for(size_t io=0; io < L; io++) {
 	  density[2*io+0] = GetReal(one_p_rdm[0][io+L*io]);
@@ -587,7 +625,7 @@ namespace sbd {
       diag(comm,sbd_data,fcidump,det,loadname,savename,
 	   energy,density,rdet,one_p_rdm,two_p_rdm);
     }
-    
+
   } // end namespace gdb
 } // end namespace sbd
 

@@ -1,9 +1,9 @@
 /**
-@file sbd/chemistry/tpb/davidson.h
+@file sbd/chemistry/basic/davidson.h
 @brief davidson for parallel task management for distributed basis
 */
-#ifndef SBD_CHEMISTRY_TPB_DAVIDSON_THRUST_H
-#define SBD_CHEMISTRY_TPB_DAVIDSON_THRUST_H
+#ifndef SBD_CHEMISTRY_DAVIDSON_THRUST_H
+#define SBD_CHEMISTRY_DAVIDSON_THRUST_H
 
 #include "sbd/framework/jacobi.h"
 #ifdef __CUDACC__
@@ -73,12 +73,7 @@ void GetTotalD_Thrust(const std::vector<ElemT> & hii,
 template <typename ElemT, typename RealT>
 void Davidson(const std::vector<ElemT> &hii,
                 std::vector<ElemT> &W,
-                MultDataThrust<ElemT>& data,
-                const size_t adet_comm_size,
-                const size_t bdet_comm_size,
-                MPI_Comm h_comm,
-                MPI_Comm b_comm,
-                MPI_Comm t_comm,
+                MultBase<ElemT>& mult,
                 int max_iteration,
                 int num_block,
                 RealT eps,
@@ -95,17 +90,17 @@ void Davidson(const std::vector<ElemT> &hii,
     thrust::device_vector<ElemT> R(W.size());
     thrust::device_vector<ElemT> dii;
     int mpi_rank_h;
-    MPI_Comm_rank(h_comm, &mpi_rank_h);
+    MPI_Comm_rank(mult.h_comm(), &mpi_rank_h);
     int mpi_size_h;
-    MPI_Comm_size(h_comm, &mpi_size_h);
+    MPI_Comm_size(mult.h_comm(), &mpi_size_h);
     int mpi_rank_b;
-    MPI_Comm_rank(b_comm, &mpi_rank_b);
+    MPI_Comm_rank(mult.b_comm(), &mpi_rank_b);
     int mpi_size_b;
-    MPI_Comm_size(b_comm, &mpi_size_b);
+    MPI_Comm_size(mult.b_comm(), &mpi_size_b);
     int mpi_rank_t;
-    MPI_Comm_rank(t_comm, &mpi_rank_t);
+    MPI_Comm_rank(mult.t_comm(), &mpi_rank_t);
     int mpi_size_t;
-    MPI_Comm_size(t_comm, &mpi_size_t);
+    MPI_Comm_size(mult.t_comm(), &mpi_size_t);
 
     ElemT *H = (ElemT *)calloc(num_block * num_block, sizeof(ElemT));
     ElemT *U = (ElemT *)calloc(num_block * num_block, sizeof(ElemT));
@@ -116,8 +111,7 @@ void Davidson(const std::vector<ElemT> &hii,
     MPI_Datatype DataE = GetMpiType<RealT>::MpiT;
     MPI_Datatype DataH = GetMpiType<ElemT>::MpiT;
 
-    GetTotalD_Thrust(hii, dii, h_comm);
-
+    GetTotalD_Thrust(hii, dii, mult.h_comm());
 
 #ifdef SBD_DEBUG_DAVIDSON
     std::cout << " diagonal term at mpi process (h,b,t) = ("
@@ -152,12 +146,10 @@ void Davidson(const std::vector<ElemT> &hii,
             //Zero(HC[ib]);
             thrust::fill(HC[ib].begin(), HC[ib].end(), 0);
 
-            mult(hii_dev, C[ib], HC[ib], data,
-                    adet_comm_size, bdet_comm_size,
-                    h_comm, b_comm, t_comm);
+            mult.run(hii_dev, C[ib], HC[ib]);
 
             for (int jb = 0; jb <= ib; jb++) {
-                InnerProduct(C[jb], HC[ib], H[jb + nb * ib], b_comm);
+                InnerProduct(C[jb], HC[ib], H[jb + nb * ib], mult.b_comm());
                 H[ib + nb * jb] = Conjugate(H[jb + nb * ib]);
             }
             for (int jb = 0; jb <= ib; jb++) {
@@ -198,13 +190,13 @@ void Davidson(const std::vector<ElemT> &hii,
                 */
             // #ifdef SBD_FUAGKUPATCH
             if (mpi_size_t > 1)
-                MpiAllreduce(W_dev, MPI_SUM, t_comm);
+                MpiAllreduce(W_dev, MPI_SUM, mult.t_comm());
             if (mpi_size_h > 1)
-                MpiAllreduce(W_dev, MPI_SUM, h_comm);
+                MpiAllreduce(W_dev, MPI_SUM, mult.h_comm());
             if (mpi_size_t > 1)
-                MpiAllreduce(R, MPI_SUM, t_comm);
+                MpiAllreduce(R, MPI_SUM, mult.t_comm());
             if (mpi_size_h > 1)
-                MpiAllreduce(R, MPI_SUM, h_comm);
+                MpiAllreduce(R, MPI_SUM, mult.h_comm());
             if (mpi_size_h * mpi_size_t > 1) {
                 ElemT volp(1.0 / (mpi_size_h * mpi_size_t));
                 // W[is] *= volp;
@@ -217,10 +209,10 @@ void Davidson(const std::vector<ElemT> &hii,
             // #endif
 
             RealT norm_W;
-            Normalize(W_dev, norm_W, b_comm);
+            Normalize(W_dev, norm_W, mult.b_comm());
 
             RealT norm_R;
-            Normalize(R, norm_R, b_comm);
+            Normalize(R, norm_R, mult.b_comm());
 
         	// std::cout << "  norm_W = " << norm_W << " , norm_R = " << norm_R << std::endl;
 
@@ -263,13 +255,13 @@ void Davidson(const std::vector<ElemT> &hii,
                 // Gram-Schmidt orthogonalization
                 for (int kb = 0; kb < ib + 1; kb++) {
                     ElemT olap;
-                    InnerProduct(C[kb], C[ib+1], olap, b_comm);
+                    InnerProduct(C[kb], C[ib+1], olap, mult.b_comm());
                     olap *= ElemT(-1.0);
                     thrust::transform(thrust::device, C[kb].begin(), C[kb].end(), C[ib + 1].begin(), C[ib + 1].begin(), AXPY_kernel<ElemT>(olap));
                 }
 
                 RealT norm_C;
-                Normalize(C[ib + 1], norm_C, b_comm);
+                Normalize(C[ib + 1], norm_C, mult.b_comm());
             }
 
             auto step_end = std::chrono::high_resolution_clock::now();
@@ -285,11 +277,11 @@ void Davidson(const std::vector<ElemT> &hii,
             double predicted_next_end = total_elapsed + ave_time_per_step;
             if (mpi_rank_h == 0) {
                 if (mpi_rank_t == 0) {
-                    MPI_Bcast(&predicted_next_end, 1, MPI_DOUBLE, 0, b_comm);
+                    MPI_Bcast(&predicted_next_end, 1, MPI_DOUBLE, 0, mult.b_comm());
                 }
-                MPI_Bcast(&predicted_next_end, 1, MPI_DOUBLE, 0, t_comm);
+                MPI_Bcast(&predicted_next_end, 1, MPI_DOUBLE, 0, mult.t_comm());
             }
-            MPI_Bcast(&predicted_next_end, 1, MPI_DOUBLE, 0, h_comm);
+            MPI_Bcast(&predicted_next_end, 1, MPI_DOUBLE, 0, mult.h_comm());
 
             if (predicted_next_end > max_time) {
                 do_continue = false;
