@@ -215,8 +215,6 @@ namespace sbd {
 	  size_t thread_id = omp_get_thread_num();
 	  size_t ia_begin = thread_id;
 	  size_t ia_end   = idxmap.AdetToDetLen.size();
-	  len[task][thread_id] = 0;
-
 	  size_t address = 0;
 	  
 	  for(size_t ia=ia_begin; ia < ia_end; ia+=num_threads) {

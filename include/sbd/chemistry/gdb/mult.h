@@ -234,9 +234,9 @@ namespace sbd {
       std::vector<ElemT> rwk;
       if( slide.size() != 0 ) {
 	if( slide[0] != 0 ) {
-	  sbd::MpiSlide(wb,twk,-slide[0],b_comm);
+	  sbd::MpiSlide(wk,twk,-slide[0],b_comm);
 	} else {
-	  twk = wb;
+	  twk = wk;
 	}
       }
 
