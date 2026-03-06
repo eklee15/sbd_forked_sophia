@@ -107,14 +107,14 @@ public:
         return (det[index] >> bit_pos) & 1;
     }
 
-    inline __device__ __host__ ElemT ZeroExcite(const size_t* det, const size_t L)
+    inline __device__ __host__ ElemT ZeroExcite(const size_t* det)
     {
         ElemT energy(0.0);
 
-        for (int i = 0; i < 2 * L; i++) {
+        for (int i = 0; i < 2 * norbs; i++) {
             if (getocc(det, i)) {
                 energy += I1.Value(i, i);
-                for (int j = i + 1; j < 2 * L; j++) {
+                for (int j = i + 1; j < 2 * norbs; j++) {
                     if (getocc(det, j)) {
                         energy += I2.DirectValue(i / 2, j / 2);
                         if ((i % 2) == (j % 2)) {

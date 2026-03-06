@@ -229,17 +229,38 @@ namespace sbd {
 	   Default method 0: Calculation without storing hamiltonian elements
 	*/
 
-	std::vector<double> hii;
 	auto time_start_diag = std::chrono::high_resolution_clock::now();
 	auto time_start_davidson = std::chrono::high_resolution_clock::now();
-	sbd::makeQChamDiagTerms(adet,bdet,bit_length,L,
-				helper,I0,I1,I2,hii,
-				h_comm,b_comm,t_comm);
+	auto time_start_qcham = std::chrono::high_resolution_clock::now();
 #ifdef SBD_THRUST
+	auto time_start_mult_init = std::chrono::high_resolution_clock::now();
 	device_mult.Init(adet, bdet, bit_length, static_cast<size_t>(L),
 					adet_comm_size,bdet_comm_size, helper, I0, I1, I2,
 					h_comm,b_comm,t_comm,
 	                sbd_data.use_precalculated_dets, sbd_data.max_memory_gb_for_determinants);
+	auto time_end_mult_init = std::chrono::high_resolution_clock::now();
+	auto elapsed_mult_init_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult_init-time_start_mult_init).count();
+	double elapsed_mult_init = 1.0e-6 * elapsed_mult_init_count;
+	if( mpi_rank == 0 ) {
+		std::cout << " Elapsed time for mult.Init() " << elapsed_mult_init << " (sec) " << std::endl;
+	}
+
+	thrust::device_vector<double> hii;
+	device_mult.makeQChamDiagTerms(hii);
+#else
+	std::vector<double> hii;
+	sbd::makeQChamDiagTerms(adet,bdet,bit_length,L,
+				helper,I0,I1,I2,hii,
+				h_comm,b_comm,t_comm);
+#endif
+	auto time_end_qcham = std::chrono::high_resolution_clock::now();
+	auto elapsed_qcham_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_qcham-time_start_qcham).count();
+	double elapsed_qcham = 1.0e-6 * elapsed_qcham_count;
+	if( mpi_rank == 0 ) {
+		std::cout << " Elapsed time for makeQChamDiagTerms " << elapsed_qcham << " (sec) " << std::endl;
+	}
+
+#ifdef SBD_THRUST
 	if( method == 0 ) {
 		sbd::Davidson(hii, W, device_mult,
 				max_it,max_nb,eps,max_time);
@@ -286,17 +307,13 @@ namespace sbd {
 
 	auto time_start_mult = std::chrono::high_resolution_clock::now();
 #ifdef SBD_THRUST
-	// copyin hii
-    thrust::device_vector<double> hii_dev(hii.size());
-    thrust::copy_n(hii.begin(), hii.size(), hii_dev.begin());
-
     // copyin W
     thrust::device_vector<double> W_dev(W.size());
     thrust::copy_n(W.begin(), W.size(), W_dev.begin());
 
     thrust::device_vector<double> C_dev(C.size(), 0.0);
 
-	device_mult.run(hii_dev, W_dev, C_dev);
+	device_mult.run(hii, W_dev, C_dev);
 
 	thrust::copy_n(C_dev.begin(), C_dev.size(), C.begin());
 #else
