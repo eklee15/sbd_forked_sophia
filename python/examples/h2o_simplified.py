@@ -157,7 +157,15 @@ def main():
             print("="*70)
             print(f"Device: {sbd.get_device().upper()}")
             print(f"Ground state energy: {results['energy']:.10f} Hartree")
-            print(f"Density (first 10): {results['density'][:10]}")
+            
+            # Output density in same format as C++ version
+            # C++ outputs: density[2*i] + density[2*i+1] for each orbital
+            density = results['density']
+            combined_density = []
+            for i in range(len(density)//2):
+                combined_density.append(density[2*i] + density[2*i+1])
+            
+            print(f"Density: {combined_density}")
             print(f"Carryover determinants: {len(results['carryover_adet'])}")
             print("="*70)
             print("\n✓ Calculation completed successfully!")
