@@ -239,11 +239,19 @@ namespace sbd {
 		    << " sbd: start make diagonal term" << std::endl;
 	}
 	auto time_start_mkham = std::chrono::high_resolution_clock::now();
+#ifdef SBD_THRUST
+	thrust::device_vector<ElemT> hii;
+	device_mult.Init(bit_length,static_cast<size_t>(L),det,
+					idxmap,exidx,I0,I1,I2,
+		 			h_comm,b_comm,t_comm);
+	device_mult.makeQChamDiagTerms(hii);
+#else
 	std::vector<ElemT> hii;
 	makeQChamDiagTerms(det,bit_length,L,
 			   idxmap,exidx,I0,I1,I2,hii,
 			   h_comm,b_comm,t_comm);
-	auto time_end_mkham = std::chrono::high_resolution_clock::now();
+#endif
+    auto time_end_mkham = std::chrono::high_resolution_clock::now();
 	auto elapsed_mkham_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mkham-time_start_mkham).count();
 	double elapsed_mkham = 1.0e-6 * elapsed_mkham_count;
 	if( mpi_rank == 0 ) {
@@ -260,9 +268,6 @@ namespace sbd {
 	}
 	auto time_start_david = std::chrono::high_resolution_clock::now();
 #ifdef SBD_THRUST
-	device_mult.Init(bit_length,static_cast<size_t>(L),det,
-					idxmap,exidx,I0,I1,I2,
-		 			h_comm,b_comm,t_comm);
 	sbd::Davidson(hii, w, device_mult,
 			max_it,max_nb,eps,max_time);
 #else
@@ -293,17 +298,13 @@ namespace sbd {
 	}
 	auto time_start_mult = std::chrono::high_resolution_clock::now();
 #ifdef SBD_THRUST
-	// copyin hii
-    thrust::device_vector<double> hii_dev(hii.size());
-    thrust::copy_n(hii.begin(), hii.size(), hii_dev.begin());
-
     // copyin W
     thrust::device_vector<double> w_dev(w.size());
     thrust::copy_n(w.begin(), w.size(), w_dev.begin());
 
     thrust::device_vector<double> v(w.size(), 0.0);
 
-	device_mult.run(hii_dev, w_dev, v);
+	device_mult.run(hii, w_dev, v);
 
 	ElemT E;
 	InnerProduct(w_dev,v,E,b_comm);

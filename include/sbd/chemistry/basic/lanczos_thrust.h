@@ -19,7 +19,7 @@ namespace sbd
 {
 
 template <typename ElemT, typename RealT>
-void Lanczos(const std::vector<ElemT> &hii,
+void Lanczos(const thrust::device_vector<ElemT> &hii,
 				std::vector<ElemT> &W,
 				MultBase<ElemT>& mult,
 				int max_iteration,
@@ -50,10 +50,6 @@ void Lanczos(const std::vector<ElemT> &hii,
 //	std::vector<ElemT> HC(W);
 //	std::vector<std::vector<ElemT>> C(num_block, W);
 
-    // copyin hii
-    thrust::device_vector<ElemT> hii_dev(hii.size());
-    thrust::copy_n(hii.begin(), hii.size(), hii_dev.begin());
-
     // copyin W
     thrust::device_vector<ElemT> W_dev(W.size());
     thrust::copy_n(W.begin(), W.size(), W_dev.begin());
@@ -81,7 +77,7 @@ void Lanczos(const std::vector<ElemT> &hii,
 			int ii = ib + lda * ib;
 			int ij = ib + lda * (ib + 1);
 			int ji = ib + 1 + lda * ib;
-			mult.run(hii_dev, C[ib], HC);
+			mult.run(hii, C[ib], HC);
 
 			InnerProduct(C[ib], HC, Aii, mult.b_comm());
 			A[ii] = GetReal(Aii);

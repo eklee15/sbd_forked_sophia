@@ -72,6 +72,8 @@ public:
     void run(const thrust::device_vector<ElemT> &hii,
                     const thrust::device_vector<ElemT> &Wk,
                     thrust::device_vector<ElemT> &Wb) override;
+
+    void makeQChamDiagTerms(thrust::device_vector<ElemT> &hii);
 };
 
 // contructor for Mult data
@@ -695,38 +697,6 @@ public:
     }
 };
 
-#if 0
-template <typename ElemT>
-void mult(const std::vector<ElemT> &hii,
-            const std::vector<ElemT> &Wk,
-            std::vector<ElemT> &Wb,
-            MultDataThrust<ElemT>& data,
-            const size_t adet_comm_size,
-            const size_t bdet_comm_size,
-            MPI_Comm h_comm,
-            MPI_Comm b_comm,
-            MPI_Comm t_comm)
-{
-    // this is wrapper mult function with data copy
-
-    // copyin hii
-    thrust::device_vector<ElemT> hii_dev(hii.size());
-    thrust::copy_n(hii.begin(), hii.size(), hii_dev.begin());
-
-    // copyin Wk
-    thrust::device_vector<ElemT> Wk_dev(Wk.size());
-    thrust::copy_n(Wk.begin(), Wk.size(), Wk_dev.begin());
-
-    thrust::device_vector<ElemT> Wb_dev(Wk.size(), 0.0);
-
-    mult(hii_dev, Wk_dev, Wb_dev, data,
-		  adet_comm_size, bdet_comm_size,
-		  h_comm, b_comm, t_comm);
-
-    // copyout Wb
-    thrust::copy_n(Wb_dev.begin(), Wb_dev.size(), Wb.begin());
-}
-#endif
 
 template <typename ElemT>
 void MultTPBThrust<ElemT>::run(
@@ -1017,6 +987,57 @@ void MultTPBThrust<ElemT>::run(
 
 } // end function
 
+
+template <typename ElemT>
+class MakeQChamDiagTermKernel : public MultKernelBase<ElemT>
+{
+protected:
+    TaskHelpersThrust<ElemT> helper;
+    ElemT* hii;
+public:
+    MakeQChamDiagTermKernel(thrust::device_vector<ElemT>& hii_in, const TaskHelpersThrust<ElemT>& h, const MultTPBThrust<ElemT>& data)
+                        : MultKernelBase<ElemT>(data)
+    {
+        helper = h;
+        hii = (ElemT*)thrust::raw_pointer_cast(hii_in.data());
+    }
+
+    // kernel entry point
+    __device__ __host__ void operator()(size_t i)
+    {
+        if (i % this->mpi_size_h == this->mpi_rank_h) {
+            size_t* Det = this->det_I + i * this->D_size;
+            hii[i] = this->ZeroExcite(Det);
+        }
+    }
+};
+
+
+template <typename ElemT>
+void MultTPBThrust<ElemT>::makeQChamDiagTerms(thrust::device_vector<ElemT> &hii)
+{
+    int mpi_rank_h = 0;
+    int mpi_size_h = 1;
+    MPI_Comm_rank(this->h_comm_, &mpi_rank_h);
+    MPI_Comm_size(this->h_comm_, &mpi_size_h);
+
+    size_t braAlphaSize = 0;
+    size_t braBetaSize = 0;
+    if( helper.size() != 0 ) {
+        braAlphaSize = helper[0].braAlphaEnd - helper[0].braAlphaStart;
+        braBetaSize = helper[0].braBetaEnd - helper[0].braBetaStart;
+    }
+    size_t braSize = braAlphaSize * braBetaSize;
+
+    UpdateDet(0);
+
+    hii.resize(braSize, ElemT(0.0));
+
+    MakeQChamDiagTermKernel kernel(hii, helper[0], *this);
+	kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+    auto ci = thrust::counting_iterator<size_t>(0);
+    thrust::for_each_n(thrust::device, ci, braSize, kernel);
+}
 
 
 }
