@@ -210,13 +210,13 @@ if __name__ == "__main__":
 
 ```bash
 # CPU backend
-mpirun -np 8 -x OMP_NUM_THREADS=4 python h2o_simplified.py --device cpu
+mpirun -np 8 -x OMP_NUM_THREADS=4 python chemistry_simplified.py --device cpu
 
 # GPU backend
-mpirun -np 8 python h2o_simplified.py --device gpu
+mpirun -np 8 python chemistry_simplified.py --device gpu
 
 # Auto-detect
-mpirun -np 8 python h2o_simplified.py
+mpirun -np 8 python chemistry_simplified.py
 ```
 
 ## Design Rationale
@@ -320,5 +320,5 @@ sbd.finalize()
 ## See Also
 
 - `README_PYTHON.md` - Complete Python bindings documentation
-- `python/examples/h2o_simplified.py` - Example using simplified API
+- `python/examples/chemistry_simplified.py` - Example using simplified API
 - `python/examples/h2o_cpu_gpu.py` - Example with all parameters

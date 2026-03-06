@@ -6,9 +6,9 @@ This directory contains examples demonstrating the **simplified SBD API** where 
 
 ## Examples
 
-### 1. h2o_simplified.py - H2O Calculation (Recommended)
+### 1. chemistry_simplified.py - Chemistry Calculation (Recommended)
 
-Demonstrates the new simplified API for H2O molecule calculations.
+Demonstrates the new simplified API for quantum chemistry calculations.
 
 **Key Features:**
 - No mpi4py import needed
@@ -20,13 +20,13 @@ Demonstrates the new simplified API for H2O molecule calculations.
 
 ```bash
 # CPU backend (8 MPI ranks, 4 OpenMP threads each)
-mpirun -np 8 -x OMP_NUM_THREADS=4 python h2o_simplified.py --device cpu
+mpirun -np 8 -x OMP_NUM_THREADS=4 python chemistry_simplified.py --device cpu
 
 # GPU backend (8 MPI ranks on 8 GPUs)
-mpirun -np 8 python h2o_simplified.py --device gpu
+mpirun -np 8 python chemistry_simplified.py --device gpu
 
 # Auto-detect (default - uses GPU if available)
-mpirun -np 8 python h2o_simplified.py
+mpirun -np 8 python chemistry_simplified.py
 ```
 
 **Command-Line Arguments:**
