@@ -53,7 +53,7 @@ For non-TPB methods, please use the C++ CLI applications directly.
 
 SBD can be integrated with the [qiskit-addon-sqd](https://github.com/Qiskit/qiskit-addon-sqd) framework for quantum chemistry calculations.
 
-**Note**: To use SBD with qiskit-addon-sqd, you need the MPI-enabled fork at [https://github.com/hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd). The official Qiskit version does not yet support MPI-aware solvers.
+**Note**: To use SBD with qiskit-addon-sqd, you need the `patch-ferminon-sbd` branch of the fork at [https://github.com/hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd). The official Qiskit version does not yet support MPI-aware solvers.
 
 This integration enables:
 
@@ -67,8 +67,8 @@ This integration enables:
 To use SBD with qiskit-addon-sqd's MPI-enabled version:
 
 ```bash
-# Install MPI-enabled qiskit-addon-sqd fork
-git clone https://github.com/hfwen0502/qiskit-addon-sqd.git
+# Install MPI-enabled qiskit-addon-sqd fork (patch-ferminon-sbd branch)
+git clone -b patch-ferminon-sbd https://github.com/hfwen0502/qiskit-addon-sqd.git
 cd qiskit-addon-sqd
 pip install -e .
 
@@ -77,7 +77,7 @@ cd /path/to/sbd
 pip install -e . --no-build-isolation
 ```
 
-**Note**: The fork at [https://github.com/hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd) includes MPI enhancements with automatic detection. These changes add a `distributed.py` module and modify `fermion.py` to coordinate MPI ranks efficiently.
+**Note**: The `patch-ferminon-sbd` branch at [https://github.com/hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd) includes MPI enhancements with automatic detection. These changes add a `distributed.py` module and modify `fermion.py` to coordinate MPI ranks efficiently.
 
 ### Example: SQD with SBD Solver
 
