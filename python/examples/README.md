@@ -16,12 +16,28 @@ Demonstrates simplified API for quantum chemistry calculations with any molecule
 
 **Quick Start:**
 ```bash
-# CPU backend
-mpirun -np 8 -x OMP_NUM_THREADS=4 python chemistry_simplified.py --device cpu
+# Single rank (no MPI decomposition needed)
+python chemistry_simplified.py --device cpu --fcidump /path/to/fcidump.txt --adetfile /path/to/alpha_dets.txt
 
-# GPU backend
-mpirun -np 8 python chemistry_simplified.py --device gpu
+# CPU backend with 8 MPI ranks (must specify MPI decomposition)
+mpirun -np 8 -x OMP_NUM_THREADS=4 python chemistry_simplified.py \
+    --device cpu \
+    --fcidump /path/to/fcidump.txt \
+    --adetfile /path/to/alpha_dets.txt \
+    --adet_comm_size 2 \
+    --bdet_comm_size 2 \
+    --task_comm_size 2
+
+# GPU backend (method 0 only)
+mpirun -np 4 python chemistry_simplified.py \
+    --device gpu \
+    --fcidump /path/to/fcidump.txt \
+    --adetfile /path/to/alpha_dets.txt \
+    --adet_comm_size 2 \
+    --bdet_comm_size 2
 ```
+
+**Note:** When using more than one MPI rank, `--adet_comm_size` and `--bdet_comm_size` must be specified. Total ranks = `task_comm_size × adet_comm_size × bdet_comm_size`. GPU backend supports method 0 (matrix-free Davidson) only.
 
 **Key Options:**
 - `--device {auto,cpu,gpu}` - Device selection
@@ -44,16 +60,21 @@ Integrates SBD with **qiskit-addon-sqd** for Selected Configuration Interaction 
 
 **Quick Examples:**
 ```bash
-# Random sampling (default)
-mpirun -np 4 python sqd_integration_sbd.py --device gpu
+# Single rank
+python sqd_integration_sbd.py \
+    --fcidump ../../data/n2/fcidump.txt \
+    --adetfile ../../data/n2/1em3-alpha.txt \
+    --device cpu
 
-# Pre-computed determinants (N2)
+# N2 with GPU and 4 MPI ranks (must specify MPI decomposition)
 mpirun -np 4 python sqd_integration_sbd.py \
     --fcidump ../../data/n2/fcidump.txt \
     --adetfile ../../data/n2/1em3-alpha.txt \
-    --device gpu
+    --device gpu \
+    --adet_comm_size 2 \
+    --bdet_comm_size 2
 
-# H2O with MPI decomposition
+# H2O with 8 MPI ranks
 mpirun -np 8 python sqd_integration_sbd.py \
     --fcidump ../../data/h2o/fcidump.txt \
     --adetfile ../../data/h2o/h2o-1em4-alpha.txt \
@@ -62,6 +83,8 @@ mpirun -np 8 python sqd_integration_sbd.py \
     --task_comm_size 2 \
     --device gpu
 ```
+
+**Note:** FCIDUMP and determinant files are from `qiskit-addon-sqd` (see `../../data/`) or your own data. When using more than one MPI rank, `--adet_comm_size` and `--bdet_comm_size` must be specified. GPU backend supports method 0 (matrix-free Davidson) only — do not specify `--method` when using GPU.
 
 **Key Options:**
 - `--fcidump FILE` - FCIDUMP file path

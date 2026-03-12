@@ -85,17 +85,20 @@ See `python/examples/sqd_integration_sbd.py` for a complete example:
 
 ```bash
 # Run with 4 MPI processes (2×2 MPI decomposition)
+# FCIDUMP and determinant files come from qiskit-addon-sqd or your own data
 mpirun -n 4 python python/examples/sqd_integration_sbd.py \
-    --fcidump python/examples/molecules/n2_fci.txt \
+    --fcidump /path/to/fcidump.txt \
+    --adetfile /path/to/alpha_dets.txt \
     --samples 1000 \
     --samples_per_batch 200 \
     --num_batches 5 \
     --max_iterations 5 \
-    --method 1 \
     --eps 1e-3 \
     --adet_comm_size 2 \
     --bdet_comm_size 2
 ```
+
+**Note:** `--adet_comm_size` and `--bdet_comm_size` must be specified when using more than one MPI rank. Total ranks = `task_comm_size × adet_comm_size × bdet_comm_size`.
 
 ### Comparison with qiskit-addon-dice-solver
 
@@ -362,7 +365,7 @@ mpirun -np 8 python chemistry_simplified.py \
 
 **Advanced Usage with All Options:**
 ```bash
-mpirun -np 8 python h2o_cpu_gpu.py \
+mpirun -np 8 python chemistry_simplified.py \
     --device gpu \
     --method 0 \
     --max_it 100 \
@@ -403,7 +406,8 @@ All TPB_SBD parameters are configurable via command-line:
   - `--h_comm_size N` - Helper communicator size
 
 - **Diagonalization Method:**
-  - `--method {0,1,2,3}` - 0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham
+  - `--method {0,1,2,3}` - 0=Davidson (matrix-free), 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham
+  - **Note:** GPU backend supports method 0 (matrix-free) only
   - `--max_it N` - Maximum iterations (default: 100)
   - `--max_nb N` - Maximum basis vectors (default: 10)
   - `--eps FLOAT` - Convergence tolerance (default: 1e-3)
@@ -442,7 +446,7 @@ config = sbd.TPB_SBD()
 **Attributes:**
 - `max_it` (int): Maximum iterations (default: 1)
 - `eps` (float): Convergence tolerance (default: 1e-4)
-- `method` (int): Diagonalization method (0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham)
+- `method` (int): Diagonalization method (0=Davidson matrix-free, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham). GPU backend supports method 0 only.
 - `do_rdm` (int): Calculate RDM (0=density only, 1=full RDM)
 - `bit_length` (int): Bit length for determinants (default: 20)
 - `adet_comm_size` (int): Alpha determinant communicator size
@@ -571,6 +575,6 @@ If you use SBD in your research, please cite:
 
 ---
 
-**Repository:** https://github.com/hfwen0502/sbd  
-**Branch:** cpu-gpu-backend (dual backend support)  
-**Main Branch:** main (CPU only, stable)
+**Repository:** https://github.com/hfwen0502/sbd
+**Dev Branch:** integrate-and-patch-sqd-addon
+**Main Branch:** main (stable, tracks dev branch)
