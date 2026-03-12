@@ -407,7 +407,7 @@ All TPB_SBD parameters are configurable via command-line:
 
 - **Diagonalization Method:**
   - `--method {0,1,2,3}` - 0=Davidson (matrix-free), 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham
-  - **Note:** GPU backend supports method 0 (matrix-free) only
+  - **Note:** GPU acceleration (Thrust) only applies to method 0 (matrix-free). Methods 1/3 (stored Hamiltonian) fall back to CPU even with GPU backend. Methods 2/3 are silently remapped to 0/1 on GPU.
   - `--max_it N` - Maximum iterations (default: 100)
   - `--max_nb N` - Maximum basis vectors (default: 10)
   - `--eps FLOAT` - Convergence tolerance (default: 1e-3)
@@ -446,7 +446,7 @@ config = sbd.TPB_SBD()
 **Attributes:**
 - `max_it` (int): Maximum iterations (default: 1)
 - `eps` (float): Convergence tolerance (default: 1e-4)
-- `method` (int): Diagonalization method (0=Davidson matrix-free, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham). GPU backend supports method 0 only.
+- `method` (int): Diagonalization method (0=Davidson matrix-free, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham). GPU acceleration (Thrust) only applies to method 0; methods 1/3 fall back to CPU even with GPU backend.
 - `do_rdm` (int): Calculate RDM (0=density only, 1=full RDM)
 - `bit_length` (int): Bit length for determinants (default: 20)
 - `adet_comm_size` (int): Alpha determinant communicator size
