@@ -98,6 +98,7 @@ void MultTPBThrust<ElemT>::Init(
     this->bit_length_ = bit_length_in;
     this->norbs_ = norbs_in;
     this->D_size_ = (2 * norbs_in + bit_length_in - 1) / bit_length_in;
+    this->D_half_size_ = (norbs_in + bit_length_in - 1) / bit_length_in;
 
     this->h_comm_ = h_comm_in;
     this->b_comm_ = b_comm_in;
@@ -147,13 +148,13 @@ void MultTPBThrust<ElemT>::Init(
     }
 
     // copyin adets, bdets
-    adets.resize(this->D_size_ * adets_in.size());
-    bdets.resize(this->D_size_ * bdets_in.size());
+    adets.resize(this->D_half_size_ * adets_in.size());
+    bdets.resize(this->D_half_size_ * bdets_in.size());
     for (int i = 0; i < adets_in.size(); i++) {
-        thrust::copy_n(adets_in[i].begin(), this->D_size_, adets.begin() + i * this->D_size_);
+        thrust::copy_n(adets_in[i].begin(), this->D_half_size_, adets.begin() + i * this->D_half_size_);
     }
     for (int i = 0; i < bdets_in.size(); i++) {
-        thrust::copy_n(bdets_in[i].begin(), this->D_size_, bdets.begin() + i * this->D_size_);
+        thrust::copy_n(bdets_in[i].begin(), this->D_half_size_, bdets.begin() + i * this->D_half_size_);
     }
 
     dets_size = 0;
@@ -265,7 +266,7 @@ public:
             size_t ib = b + helper.braBetaStart;
 
             if (ia < helper.braAlphaEnd && ib < helper.braBetaEnd)
-                this->DetFromAlphaBeta(Det, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+                this->DetFromAlphaBeta(Det, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
         }
     }
 };
@@ -547,7 +548,7 @@ public:
         ElemT e = 0.0;
 
         if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
-            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
 
             for (size_t j = helper.SinglesFromAlphaOffset[a]; j < helper.SinglesFromAlphaOffset[a + 1]; j++) {
                 size_t ja = helper.SinglesFromAlphaKetIndex[j];
@@ -596,7 +597,7 @@ public:
         ElemT e = 0.0;
 
         if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
-            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
 
             for (size_t k = helper.SinglesFromBetaOffset[b]; k < helper.SinglesFromBetaOffset[b + 1]; k++) {
                 size_t ja = ia;
@@ -651,7 +652,7 @@ public:
         ElemT e = 0.0;
 
         if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
-            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
 
             for (size_t j = helper.SinglesFromAlphaOffset[a]; j < helper.SinglesFromAlphaOffset[a + 1]; j++) {
                 size_t ja = helper.SinglesFromAlphaKetIndex[j];
