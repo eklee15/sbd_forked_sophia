@@ -92,7 +92,7 @@ public:
         size_t ib = b + helper.braBetaStart;
 
         if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
-            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
             this->correlation.ZeroDiffCorrelation(DetI, this->Wb[braIdx]);
         }
     }
@@ -362,7 +362,7 @@ public:
         size_t ib = b + helper.braBetaStart;
 
         if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
-            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
             ElemT WeightI = this->Wb[braIdx];
 
             for (size_t j = helper.SinglesFromAlphaOffset[a]; j < helper.SinglesFromAlphaOffset[a + 1]; j++) {
@@ -412,7 +412,7 @@ public:
         size_t ib = b + helper.braBetaStart;
 
         if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
-            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
             ElemT WeightI = this->Wb[braIdx];
 
             for (size_t k = helper.SinglesFromBetaOffset[b]; k < helper.SinglesFromBetaOffset[b + 1]; k++) {
@@ -468,7 +468,7 @@ public:
         size_t ib = b + helper.braBetaStart;
 
         if ((braIdx % this->mpi_size_h) == this->mpi_rank_h ) {
-            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+            this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
             ElemT WeightI = this->Wb[braIdx];
 
             for (size_t j = helper.SinglesFromAlphaOffset[a]; j < helper.SinglesFromAlphaOffset[a + 1]; j++) {

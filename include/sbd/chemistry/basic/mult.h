@@ -16,10 +16,11 @@ class MultBase {
 protected:
     size_t bit_length_;
     size_t norbs_;
-    size_t D_size_;
+    size_t D_size_;      // the vector length of a full (i.e., alpha + beta) determinant
+    size_t D_half_size_; // the vector length of a half (i.e., alpha or beta) determinant
     MPI_Comm h_comm_;
-	MPI_Comm b_comm_;
-	MPI_Comm t_comm_;
+    MPI_Comm b_comm_;
+    MPI_Comm t_comm_;
 public:
     MultBase() {}
 
@@ -27,6 +28,7 @@ public:
         : bit_length(bit_length), norbs(norbs), h_comm(h_comm), b_comm(b_comm), t_comm(t_comm)
     {
         D_size_ = (2 * norbs_ + bit_length_ - 1) / bit_length_;
+        D_half_size_ = (norbs_ + bit_length_ - 1) / bit_length_;
     }
 
     inline size_t bit_length(void) const
