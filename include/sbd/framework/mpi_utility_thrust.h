@@ -278,6 +278,8 @@ public:
                 << "), source rank = " << mpi_source << " = (" << x_source << "," << y_source
                 << ")" << std::endl;
 #endif
+        MPI_Barrier(comm);
+
         std::vector<MPI_Request> req_size(2);
         std::vector<MPI_Status> sta_size(2);
         std::vector<size_t> size_send(1);
@@ -304,7 +306,7 @@ public:
         }
     }
 
-    bool Sync(void)
+    bool Sync(MPI_Comm comm)
     {
         bool recv = false;
         if (send_size > 0) {
@@ -318,6 +320,7 @@ public:
             MPI_Wait(&req_recv, &st);
             recv = true;
         }
+        MPI_Barrier(comm);
 
         send_size = 0;
         recv_size = 0;

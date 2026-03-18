@@ -25,10 +25,10 @@ public:
     MultBase() {}
 
     MultBase(size_t bit_length, size_t norbs, MPI_Comm h_comm, MPI_Comm b_comm, MPI_Comm t_comm)
-        : bit_length(bit_length), norbs(norbs), h_comm(h_comm), b_comm(b_comm), t_comm(t_comm)
+        : bit_length_(bit_length), norbs_(norbs), h_comm_(h_comm), b_comm_(b_comm), t_comm_(t_comm)
     {
-        D_size_ = (2 * norbs_ + bit_length_ - 1) / bit_length_;
-        D_half_size_ = (norbs_ + bit_length_ - 1) / bit_length_;
+        D_size_ = (2 * norbs + bit_length - 1) / bit_length;
+        D_half_size_ = (norbs + bit_length - 1) / bit_length;
     }
 
     inline size_t bit_length(void) const
