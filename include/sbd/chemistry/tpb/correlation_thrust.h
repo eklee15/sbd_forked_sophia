@@ -95,7 +95,7 @@ public:
                 DetI = this->det_I + braIdx * this->D_size;
             else {
                 DetI = this->det_I + i * this->D_size;
-                this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+                this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
             }
             this->correlation.ZeroDiffCorrelation(DetI, this->Wb[braIdx]);
         }
@@ -352,7 +352,7 @@ public:
                 DetI = this->det_I + braIdx * this->D_size;
             else {
                 DetI = this->det_I + i * this->D_size;
-                this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+                this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
             }
             ElemT WeightI = this->Wb[braIdx];
 
@@ -409,7 +409,7 @@ public:
                 DetI = this->det_I + braIdx * this->D_size;
             else {
                 DetI = this->det_I + i * this->D_size;
-                this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+                this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
             }
             ElemT WeightI = this->Wb[braIdx];
 
@@ -472,7 +472,7 @@ public:
                 DetI = this->det_I + braIdx * this->D_size;
             else {
                 DetI = this->det_I + i * this->D_size;
-                this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_size, this->bdets + ib * this->D_size);
+                this->DetFromAlphaBeta(DetI, this->adets + ia * this->D_half_size, this->bdets + ib * this->D_half_size);
             }
             ElemT WeightI = this->Wb[braIdx];
 
