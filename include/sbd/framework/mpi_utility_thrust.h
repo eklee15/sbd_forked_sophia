@@ -15,10 +15,13 @@ namespace sbd
 template <typename ElemT>
 void MpiAllreduce(thrust::device_vector<ElemT> &A, MPI_Op op, MPI_Comm comm)
 {
-    std::cout << "   TEST MpiAllreduce" << std::endl;
+    // Calling MPI functions directly on the `device_vector` sometimes caused instability,
+    // so copy them to the host temporarily.
     MPI_Datatype DataT = GetMpiType<ElemT>::MpiT;
-    thrust::device_vector<ElemT> B(A);
-    MPI_Allreduce((ElemT *)thrust::raw_pointer_cast(B.data()), (ElemT *)thrust::raw_pointer_cast(A.data()), A.size(), DataT, op, comm);
+    std::vector<ElemT> h_send(A.size()), h_recv(A.size());
+    thrust::copy(A.begin(), A.end(), h_send.begin());
+    MPI_Allreduce(h_send.data(), h_recv.data(), static_cast<int>(h_send.size()), DataT, op, comm);
+    thrust::copy(h_recv.begin(), h_recv.end(), A.begin());
 }
 
 template <typename ElemT>
