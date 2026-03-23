@@ -32,8 +32,6 @@ template <typename ElemT>
 void MpiAllreduce(thrust::device_vector<ElemT> &A, MPI_Op op, MPI_Comm comm)
 {
     std::cout << "   TEST MpiAllreduce" << std::endl;
-    // Calling MPI functions directly on the `device_vector` sometimes caused instability,
-    // so copy them to the host temporarily.
     MPI_Datatype DataT = GetMpiType<ElemT>::MpiT;
     thrust::device_vector<ElemT> B(A);
     MPI_Allreduce((ElemT *)thrust::raw_pointer_cast(B.data()), (ElemT *)thrust::raw_pointer_cast(A.data()), A.size(), DataT, op, comm);
