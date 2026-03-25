@@ -68,6 +68,7 @@ public:
                     const thrust::device_vector<ElemT> &Wk,
                     thrust::device_vector<ElemT> &Wb) override;
 
+    void makeQChamDiagTerms(thrust::device_vector<ElemT> &hii);
 
 	void correlation(const std::vector<ElemT> & w,
 				std::vector<std::vector<ElemT>> & onebody_out,
@@ -574,6 +575,44 @@ void mult(const std::vector<ElemT> &hii,
 
 } // end function for mult
 
+template <typename ElemT>
+class MakeQChamDiagTermKernel : public MultKernelBase<ElemT>
+{
+protected:
+    ElemT* hii;
+public:
+    MakeQChamDiagTermKernel(thrust::device_vector<ElemT>& hii_in, const MultGDBThrust<ElemT>& data)
+                        : MultKernelBase<ElemT>(data)
+    {
+        hii = (ElemT*)thrust::raw_pointer_cast(hii_in.data());
+    }
+
+    // kernel entry point
+    __device__ __host__ void operator()(size_t i)
+    {
+		if (i % this->mpi_size_h == this->mpi_rank_h) {
+	        size_t* Det = this->det + i * this->D_size;
+            hii[i] = this->ZeroExcite(Det);
+		}
+    }
+};
+
+
+template <typename ElemT>
+void MultGDBThrust<ElemT>::makeQChamDiagTerms(thrust::device_vector<ElemT> &hii)
+{
+    int mpi_rank_h = 0;
+    int mpi_size_h = 1;
+    MPI_Comm_rank(this->h_comm_, &mpi_rank_h);
+    MPI_Comm_size(this->h_comm_, &mpi_size_h);
+
+    hii.resize(dets_.size(), ElemT(0.0));
+
+    MakeQChamDiagTermKernel kernel(hii, *this);
+	kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+    auto ci = thrust::counting_iterator<size_t>(0);
+    thrust::for_each_n(thrust::device, ci, dets_.size(), kernel);
+}
 
 
 template <typename ElemT>

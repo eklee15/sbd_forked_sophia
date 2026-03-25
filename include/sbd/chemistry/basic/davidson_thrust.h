@@ -43,13 +43,13 @@ struct Determine_kernel {
 
 
 template <typename ElemT>
-void GetTotalD_Thrust(const std::vector<ElemT> & hii,
+void GetTotalD_Thrust(const thrust::device_vector<ElemT> & hii,
         thrust::device_vector<ElemT>& dii,
         MPI_Comm h_comm) {
     int size_d = hii.size();
     dii.resize(hii.size());
     MPI_Datatype DataT = GetMpiType<ElemT>::MpiT;
-    MPI_Allreduce(hii.data(), (ElemT*)thrust::raw_pointer_cast(dii.data()), size_d, DataT, MPI_SUM, h_comm);
+    MPI_Allreduce((ElemT*)thrust::raw_pointer_cast(hii.data()), (ElemT*)thrust::raw_pointer_cast(dii.data()), size_d, DataT, MPI_SUM, h_comm);
 }
 
 /**
@@ -71,7 +71,7 @@ void GetTotalD_Thrust(const std::vector<ElemT> & hii,
     */
 
 template <typename ElemT, typename RealT>
-void Davidson(const std::vector<ElemT> &hii,
+void Davidson(const thrust::device_vector<ElemT> &hii,
                 std::vector<ElemT> &W,
                 MultBase<ElemT>& mult,
                 int max_iteration,
@@ -129,10 +129,6 @@ void Davidson(const std::vector<ElemT> &hii,
     std::vector<double> onestep_times(num_block * max_iteration, 0.0);
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    // copyin hii
-    thrust::device_vector<ElemT> hii_dev(hii.size());
-    thrust::copy_n(hii.begin(), hii.size(), hii_dev.begin());
-
     // copyin W
     thrust::device_vector<ElemT> W_dev(W.size());
     thrust::copy_n(W.begin(), W.size(), W_dev.begin());
@@ -146,7 +142,7 @@ void Davidson(const std::vector<ElemT> &hii,
             //Zero(HC[ib]);
             thrust::fill(HC[ib].begin(), HC[ib].end(), 0);
 
-            mult.run(hii_dev, C[ib], HC[ib]);
+            mult.run(hii, C[ib], HC[ib]);
 
             for (int jb = 0; jb <= ib; jb++) {
                 InnerProduct(C[jb], HC[ib], H[jb + nb * ib], mult.b_comm());
