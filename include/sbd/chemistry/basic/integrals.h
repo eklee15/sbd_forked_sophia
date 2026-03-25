@@ -37,7 +37,7 @@ namespace sbd {
       if(!((i%2 == j%2)&&(k%2==l%2))) return zero;
       int I = i/2; int J = j/2; int K = k/2; int L=l/2;
       int S = i%2 + 2 * (k%2);
-      return store[I+J*norb+K*norb*norb+L*norb*norb*norb+S*norb*norb*norb*norb];
+      return store[I+J*norbs+K*norbs*norbs+L*norbs*norbs*norbs+S*norbs*norbs*norbs*norbs];
     }
     inline ElemT & Direct(int i, int j) {
       return DirectMat[i+2*norbs*j];
@@ -50,7 +50,7 @@ namespace sbd {
       if(!((i%2 == j%2)&&(k%2==l%2))) return zero;
       int I = i/2; int J = j/2; int K = k/2; int L=l/2;
       int S = i%2 + 2 * (k%2);
-      return store[I+J*norb+K*norb*norb+L*norb*norb*norb+S*norb*norb*norb*norb];
+      return store[I+J*norbs+K*norbs*norbs+L*norbs*norbs*norbs+S*norbs*norbs*norbs*norbs];
     }
     inline ElemT DirectValue(int i, int j) const {
       return DirectMat[i+2*norbs*j];
