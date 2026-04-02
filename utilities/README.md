@@ -20,8 +20,11 @@ Tools to convert Qiskit Sampler output (JSON format) into determinant files comp
 # Install dependencies
 pip install qiskit-addon-sqd numpy
 
-# Run conversion with sample file
+# Run conversion with sample file (all determinants)
 python convert_sampler_to_sbd.py count_dict.json --norb 29 --nelec 5 5
+
+# Run with subsampling to cap computational cost
+python convert_sampler_to_sbd.py count_dict.json --norb 29 --nelec 5 5 --max-dets 1000
 ```
 
 #### C++ Version (Recommended for Large Datasets)
@@ -37,7 +40,12 @@ g++ -std=c++17 -O3 \
     -o convert_sampler_to_sbd_cpp convert_sampler_to_sbd.cpp
 
 # Run conversion (30x faster than Python)
+# Basic usage: all determinants
 ./convert_sampler_to_sbd_cpp count_dict.json 29 5 5 output_prefix
+
+# With subsampling to cap computational cost
+./convert_sampler_to_sbd_cpp count_dict.json 29 5 5 output_prefix 1000 42
+#                                                                  ^max  ^seed
 ```
 
 **Note**: You need to install or point to:

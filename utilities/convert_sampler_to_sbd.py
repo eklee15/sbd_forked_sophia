@@ -18,7 +18,7 @@ import numpy as np
 
 # Use qiskit-addon-sqd functions for proper conversion
 from qiskit_addon_sqd.counts import counts_to_arrays, bitstring_matrix_to_integers
-from qiskit_addon_sqd.subsampling import postselect_by_hamming_right_and_left
+from qiskit_addon_sqd.subsampling import postselect_by_hamming_right_and_left, subsample
 from qiskit_addon_sqd.configuration_recovery import recover_configurations
 
 
@@ -27,7 +27,9 @@ def convert_counts_to_sbd_format(
     norb: int,
     nelec: tuple[int, int],
     output_dir: str = ".",
-    prefix: str = "determinants"
+    prefix: str = "determinants",
+    max_dets: int | None = None,
+    rand_seed: int = 42
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Convert counts dictionary to SBD determinant files using qiskit-addon-sqd functions.
@@ -38,6 +40,8 @@ def convert_counts_to_sbd_format(
         nelec: Tuple of (n_alpha, n_beta) number of electrons
         output_dir: Directory to save output files
         prefix: Prefix for output filenames
+        max_dets: Maximum number of determinants to subsample (None = use all)
+        rand_seed: Random seed for subsampling
         
     Returns:
         Tuple of (alpha_dets, beta_dets) as integer arrays
@@ -84,6 +88,16 @@ def convert_counts_to_sbd_format(
             f"Configuration recovery produced no valid bitstrings. "
             f"Check your nelec values (n_alpha={n_alpha}, n_beta={n_beta})."
         )
+    
+    # Subsample if max_dets is specified (to cap computational cost)
+    if max_dets is not None and len(bitstring_matrix) > max_dets:
+        print(f"\nSubsampling to {max_dets} determinants (from {len(bitstring_matrix)})...")
+        # subsample() returns a list of batches; we just want one batch
+        batches = subsample(bitstring_matrix, probs, max_dets, num_batches=1, rand_seed=rand_seed)
+        bitstring_matrix = batches[0]
+        # Recalculate probabilities for the subsampled batch (uniform for simplicity)
+        probs = np.ones(len(bitstring_matrix)) / len(bitstring_matrix)
+        print(f"  Subsampled to {len(bitstring_matrix)} determinants")
     
     # Split bitstrings into alpha (right half) and beta (left half)
     # Convention in qiskit-addon-sqd: [beta_bits | alpha_bits]
@@ -179,6 +193,19 @@ def main():
         default="determinants",
         help="Prefix for output filenames"
     )
+    parser.add_argument(
+        "--max-dets",
+        type=int,
+        default=None,
+        help="Maximum number of determinants to subsample (default: use all). "
+             "Useful for capping computational cost in SBD solver."
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for subsampling"
+    )
     
     args = parser.parse_args()
     
@@ -197,7 +224,9 @@ def main():
         args.norb,
         tuple(args.nelec),
         args.output_dir,
-        args.prefix
+        args.prefix,
+        args.max_dets,
+        args.seed
     )
     
     print("\n" + "="*70)

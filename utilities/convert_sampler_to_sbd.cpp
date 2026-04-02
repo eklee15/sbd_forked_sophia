@@ -39,6 +39,7 @@
 #include "qiskit/addon/sqd/fermion.hpp"
 #include "qiskit/addon/sqd/configuration_recovery.hpp"
 #include "qiskit/addon/sqd/bitset_full.hpp"
+#include "qiskit/addon/sqd/subsampling.hpp"
 
 /**
  * Parse a JSON line containing a bitstring and count.
@@ -98,7 +99,8 @@ std::string bitset_to_string(const boost::dynamic_bitset<>& bs) {
  */
 int process_json_file(const std::string& json_file, unsigned int norb,
                      unsigned int n_alpha, unsigned int n_beta,
-                     const std::string& output_prefix) {
+                     const std::string& output_prefix,
+                     int max_dets = -1) {
     std::ifstream fp(json_file);
     if (!fp.is_open()) {
         std::cerr << "Error: Cannot open file " << json_file << std::endl;
@@ -239,6 +241,23 @@ int process_json_file(const std::string& json_file, unsigned int norb,
         return 1;
     }
     
+    // Subsample if max_dets is specified (to cap computational cost)
+    if (max_dets > 0 && static_cast<int>(bitstrings.size()) > max_dets) {
+        std::cout << "\nSubsampling to " << max_dets << " determinants (from "
+                  << bitstrings.size() << ")..." << std::endl;
+        
+        // Create uniform weights for subsampling (all bitstrings equally likely)
+        std::vector<double> weights(bitstrings.size(), 1.0);
+        
+        // Use qiskit-addon-sqd-hpc subsample function
+        auto subsampled = Qiskit::addon::sqd::subsample(
+            bitstrings, weights, max_dets, rng
+        );
+        
+        bitstrings = subsampled;
+        std::cout << "  Subsampled to " << bitstrings.size() << " determinants" << std::endl;
+    }
+    
     // Split recovered bitstrings into alpha and beta determinants
     std::vector<boost::dynamic_bitset<>> alpha_dets, beta_dets;
     for (const auto& bs : bitstrings) {
@@ -323,7 +342,7 @@ int process_json_file(const std::string& json_file, unsigned int norb,
 
 int main(int argc, char* argv[]) {
     if (argc < 5) {
-        std::cerr << "Usage: " << argv[0] << " <json_file> <norb> <n_alpha> <n_beta> [output_prefix]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <json_file> <norb> <n_alpha> <n_beta> [output_prefix] [max_dets]" << std::endl;
         std::cerr << std::endl;
         std::cerr << "Arguments:" << std::endl;
         std::cerr << "  json_file      Path to count_dict.json from Qiskit Sampler" << std::endl;
@@ -331,12 +350,14 @@ int main(int argc, char* argv[]) {
         std::cerr << "  n_alpha        Number of alpha electrons" << std::endl;
         std::cerr << "  n_beta         Number of beta electrons" << std::endl;
         std::cerr << "  output_prefix  Prefix for output files (default: determinants)" << std::endl;
+        std::cerr << "  max_dets       Maximum determinants to subsample (default: -1 = use all)" << std::endl;
         std::cerr << std::endl;
-        std::cerr << "Example:" << std::endl;
-        std::cerr << "  " << argv[0] << " ../count_dict.json 29 5 5 sbd_output_cpp/determinants" << std::endl;
+        std::cerr << "Examples:" << std::endl;
+        std::cerr << "  " << argv[0] << " count_dict.json 29 5 5 sbd_output/determinants" << std::endl;
+        std::cerr << "  " << argv[0] << " count_dict.json 29 5 5 sbd_output/determinants 1000" << std::endl;
         std::cerr << std::endl;
         std::cerr << "This version uses qiskit-addon-sqd-hpc library functions including" << std::endl;
-        std::cerr << "configuration recovery to fix noisy bitstrings." << std::endl;
+        std::cerr << "configuration recovery and subsampling." << std::endl;
         return 1;
     }
     
@@ -345,6 +366,7 @@ int main(int argc, char* argv[]) {
     unsigned int n_alpha = std::stoul(argv[3]);
     unsigned int n_beta = std::stoul(argv[4]);
     std::string output_prefix = (argc > 5) ? argv[5] : "determinants";
+    int max_dets = (argc > 6) ? std::stoi(argv[6]) : -1;
     
     if (norb == 0 || norb > 128) {
         std::cerr << "Error: norb must be between 1 and 128" << std::endl;
@@ -356,7 +378,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    return process_json_file(json_file, norb, n_alpha, n_beta, output_prefix);
+    return process_json_file(json_file, norb, n_alpha, n_beta, output_prefix, max_dets);
 }
 
 // Made with Bob
