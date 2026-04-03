@@ -161,14 +161,6 @@ public:
             return -1;
         }
         return i;
-
-        /*
-        for(size_t i = BdetToDetOffset[jbst]; i < BdetToDetOffset[jbst + 1]; i++) {
-            if( BdetToAdetSM[i] >= jast) {
-                return (int64_t)i;
-            }
-        }
-        return -1;*/
     }
 
 
