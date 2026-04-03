@@ -17,8 +17,7 @@ protected:
     twoInt_Thrust<ElemT> I2;
     size_t bit_length;
     size_t norbs;
-    size_t D_size;      // the vector length of a full (i.e., alpha + beta) determinant
-    size_t D_half_size; // the vector length of a half (i.e., alpha or beta) determinant
+    size_t D_size;
 public:
     DeterminantKernels() {}
 
@@ -31,7 +30,6 @@ public:
         bit_length = bit_length_in;
         norbs = norbs_in;
         D_size = (2 * norbs + bit_length - 1) / bit_length;
-        D_half_size = (norbs + bit_length - 1) / bit_length;
     }
 
     __device__ __host__ void DetFromAlphaBeta(size_t *D, const size_t *A, const size_t *B)
@@ -118,9 +116,9 @@ public:
                 energy += I1.Value(i, i);
                 for (int j = i + 1; j < 2 * norbs; j++) {
                     if (getocc(det, j)) {
-                        energy += I2.DirectValue(i, j);
+                        energy += I2.DirectValue(i / 2, j / 2);
                         if ((i % 2) == (j % 2)) {
-                            energy -= I2.ExchangeValue(i, j);
+                            energy -= I2.ExchangeValue(i / 2, j / 2);
                         }
                     }
                 }

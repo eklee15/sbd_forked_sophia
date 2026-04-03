@@ -34,7 +34,6 @@ namespace sbd {
 #ifdef SBD_THRUST
 	  bool use_precalculated_dets = true;
 	  int max_memory_gb_for_determinants = -1;
-	  bool thrust_collapse_loops = true;
 #endif
 	};
 
@@ -93,10 +92,6 @@ namespace sbd {
 	}
 	if( std::string(argv[i]) == "--max_memory_gb_for_determinants" ) {
 	  sbd_data.max_memory_gb_for_determinants = std::atoi(argv[i+1]);
-	  i++;
-	}
-	if( std::string(argv[i]) == "--thrust_collapse_loops" ) {
-	  sbd_data.thrust_collapse_loops = std::atoi(argv[i+1]) == 1;
 	  i++;
 	}
 #endif
@@ -242,7 +237,7 @@ namespace sbd {
 	device_mult.Init(adet, bdet, bit_length, static_cast<size_t>(L),
 					adet_comm_size,bdet_comm_size, helper, I0, I1, I2,
 					h_comm,b_comm,t_comm,
-	                sbd_data.use_precalculated_dets, sbd_data.max_memory_gb_for_determinants, sbd_data.thrust_collapse_loops);
+	                sbd_data.use_precalculated_dets, sbd_data.max_memory_gb_for_determinants);
 	auto time_end_mult_init = std::chrono::high_resolution_clock::now();
 	auto elapsed_mult_init_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult_init-time_start_mult_init).count();
 	double elapsed_mult_init = 1.0e-6 * elapsed_mult_init_count;
@@ -476,7 +471,8 @@ namespace sbd {
 
 	auto time_start_meas = std::chrono::high_resolution_clock::now();
 #ifdef SBD_THRUST
-	device_mult.correlation(W,
+	Correlation(W,
+		device_mult,
 		one_p_rdm,
 	    two_p_rdm);
 #else
@@ -581,9 +577,6 @@ namespace sbd {
 
       FreeHelpers(helper);
 
-      MPI_Comm_free(&h_comm);
-      MPI_Comm_free(&b_comm);
-      MPI_Comm_free(&t_comm);
     } // end void diag function
 
     /**

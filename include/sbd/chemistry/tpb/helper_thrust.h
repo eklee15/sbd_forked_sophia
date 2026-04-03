@@ -114,57 +114,40 @@ public:
 
         size_t size = 0;
         size_t size_cran = 0;
+        // storage for offsets
+        if (store_offset) {
+            size += ((braAlphaSize + 1) + (braBetaSize + 1)) * 2;
+        }
 
         size_single_alpha = 0;
         size_double_alpha = 0;
         size_single_beta = 0;
         size_double_beta = 0;
-
         std::vector<size_t> offset_single_alpha(braAlphaSize + 1);
         std::vector<size_t> offset_double_alpha(braAlphaSize + 1);
-        if (taskType != 1) {
-            for(size_t i=0; i < braAlphaSize; i++) {
-                offset_single_alpha[i] = size_single_alpha;
-                size_single_alpha += helper.SinglesFromAlphaLen[i];
-                if (taskType == 2) {
-                    offset_double_alpha[i] = size_double_alpha;
-                    size_double_alpha += helper.DoublesFromAlphaLen[i];
-                }
-            }
-            offset_single_alpha[braAlphaSize] = size_single_alpha;
-            offset_double_alpha[braAlphaSize] = size_double_alpha;
-            size += size_single_alpha + size_double_alpha;
-            size_cran += size_single_alpha * 2 + size_double_alpha * 4;
-
-            if (store_offset) {
-                size += (braAlphaSize + 1);
-                if (taskType == 2)
-                    size += (braAlphaSize + 1);
-            }
+        for(size_t i=0; i < braAlphaSize; i++) {
+            offset_single_alpha[i] = size_single_alpha;
+            offset_double_alpha[i] = size_double_alpha;
+            size_single_alpha += helper.SinglesFromAlphaLen[i];
+            size_double_alpha += helper.DoublesFromAlphaLen[i];
         }
+        offset_single_alpha[braAlphaSize] = size_single_alpha;
+        offset_double_alpha[braAlphaSize] = size_double_alpha;
+        size += size_single_alpha + size_double_alpha;
+        size_cran += size_single_alpha * 2 + size_double_alpha * 4;
 
         std::vector<size_t> offset_single_beta(braBetaSize + 1);
         std::vector<size_t> offset_double_beta(braBetaSize + 1);
-        if (taskType != 2) {
-            for(size_t i=0; i < braBetaSize; i++) {
-                offset_single_beta[i] = size_single_beta;
-                size_single_beta += helper.SinglesFromBetaLen[i];
-                if (taskType == 1) {
-                    offset_double_beta[i] = size_double_beta;
-                    size_double_beta += helper.DoublesFromBetaLen[i];
-                }
-            }
-            offset_single_beta[braBetaSize] = size_single_beta;
-            offset_double_beta[braBetaSize] = size_double_beta;
-            size += size_single_beta + size_double_beta;
-            size_cran += size_single_beta * 2 + size_double_beta * 4;
-
-            if (store_offset) {
-                size += (braBetaSize + 1);
-                if (taskType == 1)
-                    size += (braBetaSize + 1);
-            }
+        for(size_t i=0; i < braBetaSize; i++) {
+            offset_single_beta[i] = size_single_beta;
+            offset_double_beta[i] = size_double_beta;
+            size_single_beta += helper.SinglesFromBetaLen[i];
+            size_double_beta += helper.DoublesFromBetaLen[i];
         }
+        offset_single_beta[braBetaSize] = size_single_beta;
+        offset_double_beta[braBetaSize] = size_double_beta;
+        size += size_single_beta + size_double_beta;
+        size_cran += size_single_beta * 2 + size_double_beta * 4;
 
         if (!store_offset)
             size *= 2;
@@ -173,99 +156,83 @@ public:
 
         size_t count = 0;
         if (store_offset) {
-            // store offsets for non-collapsed loop calculation
-            if (taskType != 1) {
-                SinglesFromAlphaOffset = base_memory + count;
-                thrust::copy_n(offset_single_alpha.begin(), braAlphaSize + 1, storage.begin() + count);
-                count += braAlphaSize + 1;
+            // store offsets for non-balanced
+            SinglesFromAlphaOffset = base_memory + count;
+            thrust::copy_n(offset_single_alpha.begin(), braAlphaSize + 1, storage.begin() + count);
+            count += braAlphaSize + 1;
 
-                if (taskType == 2) {
-                    DoublesFromAlphaOffset = base_memory + count;
-                    thrust::copy_n(offset_double_alpha.begin(), braAlphaSize + 1, storage.begin() + count);
-                    count += braAlphaSize + 1;
-                }
-            }
+            DoublesFromAlphaOffset = base_memory + count;
+            thrust::copy_n(offset_double_alpha.begin(), braAlphaSize + 1, storage.begin() + count);
+            count += braAlphaSize + 1;
 
-            if (taskType != 2) {
-                SinglesFromBetaOffset = base_memory + count;
-                thrust::copy_n(offset_single_beta.begin(), braBetaSize + 1, storage.begin() + count);
-                count += braBetaSize + 1;
+            SinglesFromBetaOffset = base_memory + count;
+            thrust::copy_n(offset_single_beta.begin(), braBetaSize + 1, storage.begin() + count);
+            count += braBetaSize + 1;
 
-                if (taskType == 1) {
-                    DoublesFromBetaOffset = base_memory + count;
-                    thrust::copy_n(offset_double_beta.begin(), braBetaSize + 1, storage.begin() + count);
-                    count += braBetaSize + 1;
-                }
-            }
+            DoublesFromBetaOffset = base_memory + count;
+            thrust::copy_n(offset_double_beta.begin(), braBetaSize + 1, storage.begin() + count);
+            count += braBetaSize + 1;
         }
 
-        if (taskType != 1) {
-            if (store_offset) {
-                SinglesFromAlphaKetIndex = base_memory + count;
-            } else {
-                SinglesFromAlphaBraIndex = base_memory + count + size_single_alpha;
-                SinglesFromAlphaKetIndex = base_memory + count;
-            }
-            for(size_t i=0; i < braAlphaSize; i++) {
-                thrust::copy_n(helper.SinglesFromAlphaSM[i], helper.SinglesFromAlphaLen[i], storage.begin() + count + offset_single_alpha[i]);
-                if (!store_offset)
-                    thrust::fill_n(storage.begin() + size_single_alpha + count + offset_single_alpha[i], helper.SinglesFromAlphaLen[i], i + helper.braAlphaStart);
-            }
+        if (store_offset) {
+            SinglesFromAlphaKetIndex = base_memory + count;
+        } else {
+            SinglesFromAlphaBraIndex = base_memory + count + size_single_alpha;
+            SinglesFromAlphaKetIndex = base_memory + count;
+        }
+        for(size_t i=0; i < braAlphaSize; i++) {
+            thrust::copy_n(helper.SinglesFromAlphaSM[i], helper.SinglesFromAlphaLen[i], storage.begin() + count + offset_single_alpha[i]);
             if (!store_offset)
-                count += size_single_alpha;
+                thrust::fill_n(storage.begin() + size_single_alpha + count + offset_single_alpha[i], helper.SinglesFromAlphaLen[i], i + helper.braAlphaStart);
+        }
+        if (!store_offset)
             count += size_single_alpha;
+        count += size_single_alpha;
 
-            if (taskType == 2) {
-                if (store_offset) {
-                    DoublesFromAlphaKetIndex = base_memory + count;
-                } else {
-                    DoublesFromAlphaBraIndex = base_memory + count + size_double_alpha;
-                    DoublesFromAlphaKetIndex = base_memory + count;
-                }
-                for(size_t i=0; i < braAlphaSize; i++) {
-                    thrust::copy_n(helper.DoublesFromAlphaSM[i], helper.DoublesFromAlphaLen[i], storage.begin() + count + offset_double_alpha[i]);
-                    if (!store_offset)
-                        thrust::fill_n(storage.begin() + count + size_double_alpha + offset_double_alpha[i], helper.DoublesFromAlphaLen[i], i + helper.braAlphaStart);
-                }
-                if (!store_offset)
-                    count += size_double_alpha;
-                count += size_double_alpha;
-            }
+        if (store_offset) {
+            DoublesFromAlphaKetIndex = base_memory + count;
+        } else {
+            DoublesFromAlphaBraIndex = base_memory + count + size_double_alpha;
+            DoublesFromAlphaKetIndex = base_memory + count;
         }
-
-        if (taskType != 2) {
-            if (store_offset) {
-                SinglesFromBetaKetIndex = base_memory + count;
-            } else {
-                SinglesFromBetaBraIndex = base_memory + count + size_single_beta;
-                SinglesFromBetaKetIndex = base_memory + count;
-            }
-            for(size_t i=0; i < braBetaSize; i++) {
-                thrust::copy_n(helper.SinglesFromBetaSM[i], helper.SinglesFromBetaLen[i], storage.begin() + count + offset_single_beta[i]);
-                if (!store_offset)
-                    thrust::fill_n(storage.begin() + count + size_single_beta + offset_single_beta[i], helper.SinglesFromBetaLen[i], i + helper.braBetaStart);
-            }
+        for(size_t i=0; i < braAlphaSize; i++) {
+            thrust::copy_n(helper.DoublesFromAlphaSM[i], helper.DoublesFromAlphaLen[i], storage.begin() + count + offset_double_alpha[i]);
             if (!store_offset)
-                count += size_single_beta;
-            count += size_single_beta;
-
-            if (taskType == 1) {
-                if (store_offset) {
-                    DoublesFromBetaKetIndex = base_memory + count;
-                } else {
-                    DoublesFromBetaBraIndex = base_memory + count + size_double_beta;
-                    DoublesFromBetaKetIndex = base_memory + count;
-                }
-                for(size_t i=0; i < braBetaSize; i++) {
-                    thrust::copy_n(helper.DoublesFromBetaSM[i], helper.DoublesFromBetaLen[i], storage.begin() + count + offset_double_beta[i]);
-                    if (!store_offset)
-                        thrust::fill_n(storage.begin() + count + size_double_beta + offset_double_beta[i], helper.DoublesFromBetaLen[i], i + helper.braBetaStart);
-                }
-                if (!store_offset)
-                    count += size_double_beta;
-                count += size_double_beta;
-            }
+                thrust::fill_n(storage.begin() + count + size_double_alpha + offset_double_alpha[i], helper.DoublesFromAlphaLen[i], i + helper.braAlphaStart);
         }
+        if (!store_offset)
+            count += size_double_alpha;
+        count += size_double_alpha;
+
+        if (store_offset) {
+            SinglesFromBetaKetIndex = base_memory + count;
+        } else {
+            SinglesFromBetaBraIndex = base_memory + count + size_single_beta;
+            SinglesFromBetaKetIndex = base_memory + count;
+        }
+        for(size_t i=0; i < braBetaSize; i++) {
+            thrust::copy_n(helper.SinglesFromBetaSM[i], helper.SinglesFromBetaLen[i], storage.begin() + count + offset_single_beta[i]);
+            if (!store_offset)
+                thrust::fill_n(storage.begin() + count + size_single_beta + offset_single_beta[i], helper.SinglesFromBetaLen[i], i + helper.braBetaStart);
+        }
+        if (!store_offset)
+            count += size_single_beta;
+        count += size_single_beta;
+
+        if (store_offset) {
+            DoublesFromBetaKetIndex = base_memory + count;
+        } else {
+            DoublesFromBetaBraIndex = base_memory + count + size_double_beta;
+            DoublesFromBetaKetIndex = base_memory + count;
+        }
+        for(size_t i=0; i < braBetaSize; i++) {
+            thrust::copy_n(helper.DoublesFromBetaSM[i], helper.DoublesFromBetaLen[i], storage.begin() + count + offset_double_beta[i]);
+            if (!store_offset)
+                thrust::fill_n(storage.begin() + count + size_double_beta + offset_double_beta[i], helper.DoublesFromBetaLen[i], i + helper.braBetaStart);
+        }
+        if (!store_offset)
+            count += size_double_beta;
+        count += size_double_beta;
 
         // convert CrAn from AoS to SoA
         size_t count_cran = 0;
@@ -274,65 +241,57 @@ public:
         cran_storage.resize(size_cran);
         base_cran = (int*)thrust::raw_pointer_cast(cran_storage.data());
 
-        if (taskType != 1) {
-            SinglesAlphaCrAnSM = base_cran + count_cran;
-            buf.resize(size_single_alpha * 2);
+        SinglesAlphaCrAnSM = base_cran + count_cran;
+        buf.resize(size_single_alpha * 2);
 #pragma omp parallel for
-            for(size_t i=0; i < braAlphaSize; i++) {
-                for (int j=0; j < helper.SinglesFromAlphaLen[i]; j++) {
-                    buf[offset_single_alpha[i] + j] = helper.SinglesAlphaCrAnSM[i][j * 2];
-                    buf[size_single_alpha + offset_single_alpha[i] + j] = helper.SinglesAlphaCrAnSM[i][j * 2 + 1];
-                }
-            }
-            thrust::copy_n(buf.begin(), size_single_alpha * 2, cran_storage.begin() + count_cran);
-            count_cran += size_single_alpha * 2;
-
-            if (taskType == 2) {
-                DoublesAlphaCrAnSM = base_cran + count_cran;
-                buf.resize(size_double_alpha * 4);
-#pragma omp parallel for
-                for(size_t i=0; i < braAlphaSize; i++) {
-                    for (int j=0; j < helper.DoublesFromAlphaLen[i]; j++) {
-                        buf[offset_double_alpha[i] + j] = helper.DoublesAlphaCrAnSM[i][j * 4];
-                        buf[offset_double_alpha[i] + j + size_double_alpha] = helper.DoublesAlphaCrAnSM[i][j * 4 + 1];
-                        buf[offset_double_alpha[i] + j + size_double_alpha * 2] = helper.DoublesAlphaCrAnSM[i][j * 4 + 2];
-                        buf[offset_double_alpha[i] + j + size_double_alpha * 3] = helper.DoublesAlphaCrAnSM[i][j * 4 + 3];
-                    }
-                }
-                thrust::copy_n(buf.begin(), size_double_alpha * 4, cran_storage.begin() + count_cran);
-                count_cran += size_double_alpha * 4;
+        for(size_t i=0; i < braAlphaSize; i++) {
+            for (int j=0; j < helper.SinglesFromAlphaLen[i]; j++) {
+                buf[offset_single_alpha[i] + j] = helper.SinglesAlphaCrAnSM[i][j * 2];
+                buf[size_single_alpha + offset_single_alpha[i] + j] = helper.SinglesAlphaCrAnSM[i][j * 2 + 1];
             }
         }
+        thrust::copy_n(buf.begin(), size_single_alpha * 2, cran_storage.begin() + count_cran);
+        count_cran += size_single_alpha * 2;
 
-        if (taskType != 2) {
-            SinglesBetaCrAnSM = base_cran + count_cran;
-            buf.resize(size_single_beta * 2);
+        DoublesAlphaCrAnSM = base_cran + count_cran;
+        buf.resize(size_double_alpha * 4);
 #pragma omp parallel for
-            for(size_t i=0; i < braBetaSize; i++) {
-                for (int j=0; j < helper.SinglesFromBetaLen[i]; j++) {
-                    buf[offset_single_beta[i] + j] = helper.SinglesBetaCrAnSM[i][j * 2];
-                    buf[size_single_beta + offset_single_beta[i] + j] = helper.SinglesBetaCrAnSM[i][j * 2 + 1];
-                }
-            }
-            thrust::copy_n(buf.begin(), size_single_beta * 2, cran_storage.begin() + count_cran);
-            count_cran += size_single_beta * 2;
-
-            if (taskType == 1) {
-                DoublesBetaCrAnSM = base_cran + count_cran;
-                buf.resize(size_double_beta * 4);
-#pragma omp parallel for
-                for(size_t i=0; i < braBetaSize; i++) {
-                    for (int j=0; j < helper.DoublesFromBetaLen[i]; j++) {
-                        buf[offset_double_beta[i] + j] = helper.DoublesBetaCrAnSM[i][j * 4];
-                        buf[offset_double_beta[i] + j + size_double_beta] = helper.DoublesBetaCrAnSM[i][j * 4 + 1];
-                        buf[offset_double_beta[i] + j + size_double_beta * 2] = helper.DoublesBetaCrAnSM[i][j * 4 + 2];
-                        buf[offset_double_beta[i] + j + size_double_beta * 3] = helper.DoublesBetaCrAnSM[i][j * 4 + 3];
-                    }
-                }
-                thrust::copy_n(buf.begin(), size_double_beta * 4, cran_storage.begin() + count_cran);
-                count_cran += size_double_beta * 4;
+        for(size_t i=0; i < braAlphaSize; i++) {
+            for (int j=0; j < helper.DoublesFromAlphaLen[i]; j++) {
+                buf[offset_double_alpha[i] + j] = helper.DoublesAlphaCrAnSM[i][j * 4];
+                buf[offset_double_alpha[i] + j + size_double_alpha] = helper.DoublesAlphaCrAnSM[i][j * 4 + 1];
+                buf[offset_double_alpha[i] + j + size_double_alpha * 2] = helper.DoublesAlphaCrAnSM[i][j * 4 + 2];
+                buf[offset_double_alpha[i] + j + size_double_alpha * 3] = helper.DoublesAlphaCrAnSM[i][j * 4 + 3];
             }
         }
+        thrust::copy_n(buf.begin(), size_double_alpha * 4, cran_storage.begin() + count_cran);
+        count_cran += size_double_alpha * 4;
+
+        SinglesBetaCrAnSM = base_cran + count_cran;
+        buf.resize(size_single_beta * 2);
+#pragma omp parallel for
+        for(size_t i=0; i < braBetaSize; i++) {
+            for (int j=0; j < helper.SinglesFromBetaLen[i]; j++) {
+                buf[offset_single_beta[i] + j] = helper.SinglesBetaCrAnSM[i][j * 2];
+                buf[size_single_beta + offset_single_beta[i] + j] = helper.SinglesBetaCrAnSM[i][j * 2 + 1];
+            }
+        }
+        thrust::copy_n(buf.begin(), size_single_beta * 2, cran_storage.begin() + count_cran);
+        count_cran += size_single_beta * 2;
+
+        DoublesBetaCrAnSM = base_cran + count_cran;
+        buf.resize(size_double_beta * 4);
+#pragma omp parallel for
+        for(size_t i=0; i < braBetaSize; i++) {
+            for (int j=0; j < helper.DoublesFromBetaLen[i]; j++) {
+                buf[offset_double_beta[i] + j] = helper.DoublesBetaCrAnSM[i][j * 4];
+                buf[offset_double_beta[i] + j + size_double_beta] = helper.DoublesBetaCrAnSM[i][j * 4 + 1];
+                buf[offset_double_beta[i] + j + size_double_beta * 2] = helper.DoublesBetaCrAnSM[i][j * 4 + 2];
+                buf[offset_double_beta[i] + j + size_double_beta * 3] = helper.DoublesBetaCrAnSM[i][j * 4 + 3];
+            }
+        }
+        thrust::copy_n(buf.begin(), size_double_beta * 4, cran_storage.begin() + count_cran);
+        count_cran += size_double_beta * 4;
     }
 };
 
