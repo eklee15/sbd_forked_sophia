@@ -91,6 +91,36 @@ Run `python run_sqd_sbd.py --help` for the full list.
 **Requirements:** `sbd`, `mpi4py`, `pyscf`, `numpy`, and the MPI-aware fork of qiskit-addon-sqd:
 [hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd) (`patch-ferminon-sbd` branch)
 
+### 3. run_sqd_fulqrum.py — SQD Loop with Fulqrum Eigensolver
+
+Alternative to `run_sqd_sbd.py` using [Fulqrum](https://github.com/qiskit-community/fulqrum)
+as the eigensolver instead of SBD. Single-process (no MPI), useful for comparison
+and smaller systems.
+
+```bash
+# H2O with example bitstrings
+python run_sqd_fulqrum.py \
+    --fcidump ../../data/h2o/fcidump.txt \
+    --counts count_dict_h2o.json
+
+# N2 with hardware bitstrings
+python run_sqd_fulqrum.py \
+    --fcidump /path/to/fcidump.txt \
+    --counts /path/to/count_dict.json
+```
+
+**Requirements:** `fulqrum`, `numpy`, `scipy`
+
+**RHEL 9 / Fedora note:** Fulqrum's C++ extensions crash on distros with
+`_GLIBCXX_ASSERTIONS` enabled by default. Rebuild with:
+
+```bash
+CXXFLAGS='-O3 -std=c++17 -ffast-math -fopenmp -U_GLIBCXX_ASSERTIONS -DNDEBUG' \
+pip install -e . --no-build-isolation --force-reinstall --no-deps
+```
+
+macOS and Ubuntu/Debian are not affected.
+
 ## MPI Decomposition
 
 Total MPI ranks must equal `task_comm_size × adet_comm_size × bdet_comm_size`.
