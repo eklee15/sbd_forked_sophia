@@ -159,7 +159,7 @@ Located in `python/examples/`:
 - **`run_sbd_diag.py`** — Standalone TPB diagonalization (no Qiskit dependency)
 - **`run_sqd_sbd.py`** — SQD loop with SBD solver (random or hardware bitstrings)
 
-See [python/examples/README.md](python/examples/README.md) for usage details.
+See [python/examples/README.md](../python/examples/README.md) for usage details.
 
 ## API Reference
 
