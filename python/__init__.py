@@ -1,76 +1,112 @@
 """
 SBD (Selected Basis Diagonalization) Python Bindings
 
-This package provides Python bindings for the SBD library with simplified API.
+This package provides Python bindings for the SBD library.
 
-Two usage modes:
-
-1. Simplified API (Recommended - no mpi4py needed):
+Usage:
     import sbd
-    sbd.init(device='gpu', comm_backend='mpi')
-    results = sbd.tpb_diag_from_files(...)
+    sbd.init()                          # initialize MPI, auto-detect device
+    results = sbd.tpb_diag_from_files(fcidump, adets, config)
     sbd.finalize()
 
-2. Legacy API (backward compatible):
-    from mpi4py import MPI
-    import sbd
-    results = sbd.tpb_diag_from_files(comm=MPI.COMM_WORLD, ...)
+Device switching (CPU/GPU) within the same process:
+    sbd.init()
+    result_cpu = sbd.tpb_diag(..., device='cpu')
+    result_gpu = sbd.tpb_diag(..., device='gpu')
 """
 
-import sys
 import os
 import subprocess
 
-# Version info
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
-# Global state for simplified API
-_device_module = None      # _core_cpu or _core_gpu
-_comm_backend = None       # 'mpi', 'nccl', etc.
-_comm_module = None        # MPI module from mpi4py
-_global_comm = None        # MPI communicator
-_initialized = False       # Whether init() was called
+# ---------------------------------------------------------------------------
+# Backend registry — eagerly load all available backends at import time.
+# Both _core_cpu and _core_gpu can coexist: they are separate .so files
+# with separate pybind11 namespaces, no global C++ state conflicts.
+# ---------------------------------------------------------------------------
+_backends = {}
+
+try:
+    from . import _core_cpu
+    _backends['cpu'] = _core_cpu
+except ImportError:
+    pass
+
+try:
+    from . import _core_gpu
+    _backends['gpu'] = _core_gpu
+except ImportError:
+    pass
+
+# ---------------------------------------------------------------------------
+# Global session state
+# ---------------------------------------------------------------------------
+_default_device = None   # set by init(), can be overridden per-call
+_comm_backend = None     # 'mpi'
+_comm_module = None      # mpi4py.MPI module
+_global_comm = None      # MPI communicator
+_initialized = False
+
+# Cache GPU detection to avoid repeated subprocess calls
+_gpu_check_cache = None
+
 
 def _gpu_available():
-    """Check if GPU is available via nvidia-smi"""
+    """Check if GPU is available via nvidia-smi (cached)."""
+    global _gpu_check_cache
+    if _gpu_check_cache is not None:
+        return _gpu_check_cache
     try:
-        result = subprocess.run(['nvidia-smi'], 
-                              capture_output=True, 
-                              timeout=2)
-        return result.returncode == 0
-    except:
-        return False
+        result = subprocess.run(
+            ['nvidia-smi'], capture_output=True, timeout=2
+        )
+        _gpu_check_cache = result.returncode == 0
+    except Exception:
+        _gpu_check_cache = False
+    return _gpu_check_cache
+
+
+def _resolve_device(device):
+    """Resolve 'auto' to a concrete device name."""
+    if device == 'auto':
+        if 'gpu' in _backends and _gpu_available():
+            return 'gpu'
+        return 'cpu'
+    if device in ('gpu', 'cuda'):
+        return 'gpu'
+    return device
+
 
 def init(device='auto', comm_backend='mpi'):
     """
-    Initialize SBD with device and communication backend.
-    
-    This is the simplified API that hides MPI initialization from user code.
-    After calling init(), you can use sbd functions without passing comm parameter.
-    
+    Initialize SBD with MPI and set the default compute device.
+
+    The device can be overridden per-call via the ``device`` parameter on
+    ``tpb_diag()``, ``tpb_diag_from_files()``, and ``get_backend()``.
+
     Args:
-        device (str): Compute device - 'cpu', 'gpu', 'cuda', or 'auto' (default: 'auto')
-                     'auto' will use GPU if available, otherwise CPU
-        comm_backend (str): Communication backend - 'mpi' (default: 'mpi')
-                           Future: 'nccl' for GPU-only communication
-    
-    Example:
-        import sbd
-        sbd.init(device='gpu', comm_backend='mpi')
-        config = sbd.TPB_SBD()
-        results = sbd.tpb_diag_from_files(...)
-        sbd.finalize()
-    
+        device: Default compute device — 'cpu', 'gpu', 'cuda', or 'auto'.
+        comm_backend: Communication backend — 'mpi'.
+
     Raises:
-        RuntimeError: If required dependencies are not available
-        ValueError: If invalid device or comm_backend specified
+        RuntimeError: If MPI is not available or no backends are compiled.
     """
-    global _device_module, _comm_backend, _comm_module, _global_comm, _initialized
-    
+    global _default_device, _comm_backend, _comm_module, _global_comm, _initialized
+
     if _initialized:
-        raise RuntimeError("sbd.init() already called. Call sbd.finalize() first to reinitialize.")
-    
-    # 1. Initialize communication backend
+        raise RuntimeError(
+            "sbd.init() already called. Call sbd.finalize() first to reinitialize."
+        )
+
+    if not _backends:
+        raise RuntimeError(
+            "No SBD backends available. Build with:\n"
+            "  pip install -e . --no-build-isolation      (CPU)\n"
+            "  SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation  (GPU)"
+        )
+
+    # MPI setup
     if comm_backend == 'mpi':
         try:
             from mpi4py import MPI
@@ -79,676 +115,295 @@ def init(device='auto', comm_backend='mpi'):
             _comm_backend = 'mpi'
         except ImportError:
             raise RuntimeError(
-                "MPI backend requires mpi4py.\n"
-                "Install with: pip install mpi4py"
-            )
-    elif comm_backend == 'nccl':
-        raise NotImplementedError(
-            "NCCL backend not yet implemented.\n"
-            "Currently only 'mpi' is supported."
-        )
-    else:
-        raise ValueError(
-            f"Unknown comm_backend: '{comm_backend}'.\n"
-            f"Supported: 'mpi' (future: 'nccl')"
-        )
-    
-    # 2. Select compute device
-    if device == 'auto':
-        device = 'gpu' if _gpu_available() else 'cpu'
-        if os.environ.get('SBD_VERBOSE', '0') == '1':
-            print(f"SBD: Auto-selected device: {device}")
-    
-    if device in ['gpu', 'cuda']:
-        try:
-            from . import _core_gpu
-            _device_module = _core_gpu
-            device_name = 'gpu'
-        except ImportError as e:
-            raise RuntimeError(
-                f"GPU device requires _core_gpu.so to be built.\n"
-                f"Build with: SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation\n"
-                f"Error: {e}"
-            )
-    elif device == 'cpu':
-        try:
-            from . import _core_cpu
-            _device_module = _core_cpu
-            device_name = 'cpu'
-        except ImportError as e:
-            raise RuntimeError(
-                f"CPU device requires _core_cpu.so to be built.\n"
-                f"Build with: pip install -e . --no-build-isolation\n"
-                f"Error: {e}"
+                "MPI backend requires mpi4py. Install with: pip install mpi4py"
             )
     else:
-        raise ValueError(
-            f"Unknown device: '{device}'.\n"
-            f"Supported: 'cpu', 'gpu', 'cuda', 'auto'"
+        raise ValueError(f"Unknown comm_backend: '{comm_backend}'. Supported: 'mpi'")
+
+    # Resolve default device
+    resolved = _resolve_device(device)
+    if resolved not in _backends:
+        available = list(_backends.keys())
+        raise RuntimeError(
+            f"Device '{resolved}' requested but backend not available. "
+            f"Available: {available}"
         )
-    
+    _default_device = resolved
     _initialized = True
-    
-    # Print initialization info
+
+    # Print init info on rank 0
     rank = _global_comm.Get_rank()
     size = _global_comm.Get_size()
-    
-    if rank == 0 or os.environ.get('SBD_VERBOSE', '0') == '1':
+    if rank == 0:
         print(f"SBD initialized:")
-        print(f"  Device: {device_name}")
+        print(f"  Default device: {_default_device}")
+        print(f"  Available backends: {list(_backends.keys())}")
         print(f"  Communication: {comm_backend}")
         print(f"  MPI ranks: {size}")
-        if rank == 0:
-            print(f"  Version: {__version__}")
+        print(f"  Version: {__version__}")
+
 
 def finalize():
     """
-    Finalize SBD and clean up internal state.
-    
-    This function:
-    - Synchronizes GPU device (if using GPU backend)
-    - Resets internal Python state
-    - Does NOT call MPI_Finalize() - MPI lifecycle is managed by mpi4py
-    
-    After calling finalize(), you can call init() again with different parameters.
-    
-    Note: Similar to torch.distributed.destroy_process_group(), this ensures
-    proper cleanup of distributed computing resources.
-    
-    GPU Note: This calls cudaDeviceSynchronize() but NOT cudaDeviceReset() to
-    avoid conflicts with CUDA-aware MPI (UCX). GPU resources are freed automatically
-    when the process exits.
+    Finalize SBD and reset session state.
+
+    Synchronizes GPU (if used) but does NOT call MPI_Finalize — mpi4py
+    handles MPI lifecycle automatically.
+
+    After finalize(), init() can be called again.
     """
-    global _device_module, _comm_backend, _comm_module, _global_comm, _initialized
-    
-    # Synchronize GPU device if using GPU backend
-    if _device_module is not None and hasattr(_device_module, 'cleanup_device'):
-        try:
-            _device_module.cleanup_device()
-        except Exception as e:
-            import warnings
-            warnings.warn(f"GPU synchronization failed: {e}")
-    
-    # Reset Python state
-    _device_module = None
+    global _default_device, _comm_backend, _comm_module, _global_comm, _initialized
+
+    # Synchronize GPU backends
+    for name, backend in _backends.items():
+        if name == 'gpu' and hasattr(backend, 'cleanup_device'):
+            try:
+                backend.cleanup_device()
+            except Exception:
+                pass
+
+    _default_device = None
     _comm_backend = None
     _comm_module = None
     _global_comm = None
     _initialized = False
 
+
 def is_initialized():
-    """Check if SBD has been initialized"""
+    """Check if SBD has been initialized."""
     return _initialized
 
-def finalize_mpi():
-    """
-    Explicitly finalize MPI.
-    
-    WARNING: Only call this if you initialized MPI yourself outside of mpi4py.
-    If using mpi4py (recommended), MPI finalization is handled automatically at exit.
-    
-    This is provided for advanced use cases where explicit MPI lifecycle control is needed.
-    Similar to calling MPI_Finalize() in C/C++ code.
-    
-    Note: After calling this, you cannot use any MPI functions until MPI is reinitialized.
-    """
-    if _device_module is not None and hasattr(_device_module, 'finalize_mpi'):
-        _device_module.finalize_mpi()
-    else:
-        raise RuntimeError("SBD not initialized. Call sbd.init() first.")
 
-# ============================================================================
-# MPI Communication Primitives
-# ============================================================================
+# ---------------------------------------------------------------------------
+# Backend access
+# ---------------------------------------------------------------------------
+
+def get_backend(device=None):
+    """
+    Get the backend module for the given device.
+
+    Can be called anytime after init(). Passing ``device`` overrides the
+    default set by init() — this is how you switch between CPU and GPU
+    within the same process.
+
+    Args:
+        device: 'cpu', 'gpu', 'auto', or None (use default).
+
+    Returns:
+        The pybind11 backend module (_core_cpu or _core_gpu).
+    """
+    if device is None:
+        device = _default_device or 'auto'
+    device = _resolve_device(device)
+    if device not in _backends:
+        available = list(_backends.keys())
+        raise RuntimeError(
+            f"Backend '{device}' not available. Available: {available}"
+        )
+    return _backends[device]
+
 
 def _check_initialized():
-    """Check if SBD is initialized"""
     if not _initialized:
-        raise RuntimeError(
-            "SBD not initialized. Call sbd.init() before using communication primitives."
-        )
+        raise RuntimeError("SBD not initialized. Call sbd.init() first.")
 
-def broadcast(data, root=0):
-    """
-    Broadcast data from root rank to all other ranks.
-    
-    Similar to torch.distributed.broadcast(), this sends data from one rank
-    to all other ranks. Useful for distributing quantum samples from rank 0.
-    
-    Args:
-        data: Data to broadcast (any picklable Python object)
-        root: Source rank (default: 0)
-    
-    Returns:
-        Broadcasted data on all ranks
-    
-    Example:
-        # Rank 0 has quantum samples
-        if sbd.get_rank() == 0:
-            samples = {'bitstrings': [...], 'counts': [...]}
-        else:
-            samples = None
-        
-        # Broadcast to all ranks
-        samples = sbd.broadcast(samples, root=0)
-        # Now all ranks have the samples
-    """
-    _check_initialized()
-    data = _global_comm.bcast(data, root=root)
-    return data
 
-def gather(data, root=0):
-    """
-    Gather data from all ranks to root rank.
-    
-    Similar to torch.distributed.gather(), this collects data from all ranks
-    to a single root rank. Useful for collecting results.
-    
-    Args:
-        data: Local data from this rank
-        root: Destination rank (default: 0)
-    
-    Returns:
-        List of data from all ranks (only on root), None on other ranks
-    
-    Example:
-        local_energy = compute_local_energy()
-        all_energies = sbd.gather(local_energy, root=0)
-        
-        if sbd.get_rank() == 0:
-            avg_energy = sum(all_energies) / len(all_energies)
-    """
-    _check_initialized()
-    gathered = _global_comm.gather(data, root=root)
-    return gathered
-
-def all_gather(data):
-    """
-    Gather data from all ranks to all ranks.
-    
-    Similar to torch.distributed.all_gather(), this collects data from all
-    ranks and distributes the complete list to all ranks.
-    
-    Args:
-        data: Local data from this rank
-    
-    Returns:
-        List of data from all ranks (on all ranks)
-    
-    Example:
-        local_dets = recover_determinants()
-        all_dets = sbd.all_gather(local_dets)
-        # Now every rank has determinants from all ranks
-    """
-    _check_initialized()
-    all_data = _global_comm.allgather(data)
-    return all_data
-
-def reduce(data, op='sum', root=0):
-    """
-    Reduce data from all ranks using specified operation.
-    
-    Similar to torch.distributed.reduce(), this combines data from all ranks
-    using a reduction operation and sends result to root.
-    
-    Args:
-        data: Local data (must be numeric)
-        op: Operation ('sum', 'prod', 'max', 'min', 'avg')
-        root: Destination rank (default: 0)
-    
-    Returns:
-        Reduced result (only on root), None on other ranks
-    
-    Example:
-        local_count = len(local_determinants)
-        total_count = sbd.reduce(local_count, op='sum', root=0)
-        
-        if sbd.get_rank() == 0:
-            print(f"Total determinants: {total_count}")
-    """
-    _check_initialized()
-    
-    from mpi4py import MPI
-    
-    # Map operation names to MPI operations
-    op_map = {
-        'sum': MPI.SUM,
-        'prod': MPI.PROD,
-        'max': MPI.MAX,
-        'min': MPI.MIN,
-    }
-    
-    if op == 'avg':
-        # Average is sum divided by size
-        result = _global_comm.reduce(data, op=MPI.SUM, root=root)
-        if _global_comm.Get_rank() == root:
-            result = result / _global_comm.Get_size()
-        return result
-    elif op in op_map:
-        return _global_comm.reduce(data, op=op_map[op], root=root)
-    else:
-        raise ValueError(f"Unknown operation: {op}. Use 'sum', 'prod', 'max', 'min', or 'avg'")
-
-def all_reduce(data, op='sum'):
-    """
-    Reduce data from all ranks and distribute to all ranks.
-    
-    Similar to torch.distributed.all_reduce(), this combines data from all
-    ranks and distributes the result to all ranks.
-    
-    Args:
-        data: Local data (must be numeric)
-        op: Operation ('sum', 'prod', 'max', 'min', 'avg')
-    
-    Returns:
-        Reduced result (on all ranks)
-    
-    Example:
-        local_iterations = get_iterations()
-        avg_iterations = sbd.all_reduce(local_iterations, op='avg')
-        print(f"Rank {sbd.get_rank()}: Average iterations = {avg_iterations}")
-    """
-    _check_initialized()
-    
-    from mpi4py import MPI
-    
-    op_map = {
-        'sum': MPI.SUM,
-        'prod': MPI.PROD,
-        'max': MPI.MAX,
-        'min': MPI.MIN,
-    }
-    
-    if op == 'avg':
-        result = _global_comm.allreduce(data, op=MPI.SUM)
-        return result / _global_comm.Get_size()
-    elif op in op_map:
-        return _global_comm.allreduce(data, op=op_map[op])
-    else:
-        raise ValueError(f"Unknown operation: {op}. Use 'sum', 'prod', 'max', 'min', or 'avg'")
+# ---------------------------------------------------------------------------
+# Query functions
+# ---------------------------------------------------------------------------
 
 def get_device():
-    """
-    Get current compute device.
-    
-    Returns:
-        str: 'cpu' or 'gpu'
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
-    return 'gpu' if '_core_gpu' in _device_module.__name__ else 'cpu'
+    """Get the default compute device name."""
+    _check_initialized()
+    return _default_device
+
 
 def get_comm_backend():
-    """
-    Get current communication backend.
-    
-    Returns:
-        str: 'mpi' (future: 'nccl')
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
+    """Get the communication backend name."""
+    _check_initialized()
     return _comm_backend
 
+
 def get_rank():
-    """
-    Get MPI rank of current process.
-    
-    Returns:
-        int: MPI rank (0 to world_size-1)
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
+    """Get MPI rank of current process."""
+    _check_initialized()
     return _global_comm.Get_rank()
 
+
 def get_world_size():
-    """
-    Get total number of MPI processes.
-    
-    Returns:
-        int: Number of MPI ranks
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
+    """Get total number of MPI processes."""
+    _check_initialized()
     return _global_comm.Get_size()
 
+
+def get_comm():
+    """Get the MPI communicator."""
+    _check_initialized()
+    return _global_comm
+
+
 def barrier():
-    """
-    MPI barrier - synchronize all processes.
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
+    """MPI barrier — synchronize all processes."""
+    _check_initialized()
     _global_comm.Barrier()
 
-# Simplified API wrapper functions
-def TPB_SBD():
-    """
-    Create TPB_SBD configuration object.
-    
-    Returns:
-        TPB_SBD: Configuration object for TPB diagonalization
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
-    return _device_module.TPB_SBD()
 
-def FCIDump():
-    """
-    Create FCIDump object.
-    
-    Returns:
-        FCIDump: Object for FCIDUMP data
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
-    return _device_module.FCIDump()
+# ---------------------------------------------------------------------------
+# Wrapper functions — forward to the selected backend
+# ---------------------------------------------------------------------------
 
-def LoadFCIDump(filename):
+def TPB_SBD(device=None):
+    """Create TPB_SBD configuration object."""
+    _check_initialized()
+    return get_backend(device).TPB_SBD()
+
+
+def FCIDump(device=None):
+    """Create FCIDump object."""
+    _check_initialized()
+    return get_backend(device).FCIDump()
+
+
+def LoadFCIDump(filename, device=None):
+    """Load FCIDUMP file."""
+    _check_initialized()
+    return get_backend(device).LoadFCIDump(filename)
+
+
+def LoadAlphaDets(filename, bit_length, total_bit_length, device=None):
+    """Load alpha determinants from file."""
+    _check_initialized()
+    return get_backend(device).LoadAlphaDets(filename, bit_length, total_bit_length)
+
+
+def makestring(config, bit_length, total_bit_length, device=None):
+    """Convert determinant to string representation."""
+    _check_initialized()
+    return get_backend(device).makestring(config, bit_length, total_bit_length)
+
+
+def from_string(s, bit_length, total_bit_length, device=None):
+    """Convert binary string to determinant format."""
+    _check_initialized()
+    return get_backend(device).from_string(s, bit_length, total_bit_length)
+
+
+def tpb_diag_from_files(fcidumpfile, adetfile, sbd_data,
+                        loadname="", savename="", device=None):
     """
-    Load FCIDUMP file.
-    
+    Perform TPB diagonalization from files.
+
     Args:
-        filename (str): Path to FCIDUMP file
-    
-    Returns:
-        FCIDump: Loaded FCIDUMP object
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
-    return _device_module.LoadFCIDump(filename)
+        fcidumpfile: Path to FCIDUMP file.
+        adetfile: Path to alpha determinants file.
+        sbd_data: TPB_SBD configuration object.
+        loadname: Path to load initial wavefunction (optional).
+        savename: Path to save final wavefunction (optional).
+        device: Override device ('cpu', 'gpu', or None for default).
 
-def LoadAlphaDets(filename, bit_length, total_bit_length):
-    """
-    Load alpha determinants from file.
-    
-    Args:
-        filename (str): Path to determinants file
-        bit_length (int): Bit length for determinants
-        total_bit_length (int): Total bit length
-    
     Returns:
-        list: List of determinants
-    
-    Raises:
-        RuntimeError: If init() has not been called
+        dict with keys: energy, density, carryover_adet, carryover_bdet,
+        one_p_rdm, two_p_rdm.
     """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
-    return _device_module.LoadAlphaDets(filename, bit_length, total_bit_length)
-
-def makestring(config, bit_length, total_bit_length):
-    """
-    Convert determinant to string representation.
-    
-    Args:
-        config: Determinant configuration
-        bit_length (int): Bit length
-        total_bit_length (int): Total bit length
-    
-    Returns:
-        str: String representation
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
-    return _device_module.makestring(config, bit_length, total_bit_length)
-
-def from_string(s, bit_length, total_bit_length):
-    """
-    Convert binary string to determinant format.
-    
-    Args:
-        s (str): Binary string (e.g., "11111000000000000000")
-        bit_length (int): Bit length per size_t
-        total_bit_length (int): Total bit length
-    
-    Returns:
-        list: Determinant in SBD format (list of size_t)
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    
-    Example:
-        >>> import sbd
-        >>> sbd.init()
-        >>> det = sbd.from_string("11111", bit_length=20, total_bit_length=10)
-        >>> print(det)  # [31] (binary 11111 = decimal 31)
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
-    return _device_module.from_string(s, bit_length, total_bit_length)
-
-def tpb_diag_from_files(fcidumpfile, adetfile, sbd_data, loadname="", savename=""):
-    """
-    Perform TPB diagonalization from files (simplified API).
-    
-    This function uses the internal MPI communicator initialized by sbd.init().
-    No need to pass comm parameter.
-    
-    Args:
-        fcidumpfile (str): Path to FCIDUMP file
-        adetfile (str): Path to alpha determinants file
-        sbd_data (TPB_SBD): Configuration object
-        loadname (str): Path to load initial wavefunction (optional)
-        savename (str): Path to save final wavefunction (optional)
-    
-    Returns:
-        dict: Results dictionary with keys:
-            - 'energy': Ground state energy
-            - 'density': Orbital densities
-            - 'carryover_adet': Carryover alpha determinants
-            - 'carryover_bdet': Carryover beta determinants
-            - 'one_p_rdm': 1-particle RDM (if do_rdm=1)
-            - 'two_p_rdm': 2-particle RDM (if do_rdm=1)
-    
-    Raises:
-        RuntimeError: If init() has not been called
-    
-    Example:
-        import sbd
-        sbd.init(device='gpu')
-        config = sbd.TPB_SBD()
-        config.max_it = 100
-        config.eps = 1e-6
-        results = sbd.tpb_diag_from_files("fcidump.txt", "alphadets.txt", config)
-        print(f"Energy: {results['energy']}")
-        sbd.finalize()
-    """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
-    
-    return _device_module.tpb_diag_from_files(
+    _check_initialized()
+    backend = get_backend(device)
+    return backend.tpb_diag_from_files(
         _global_comm, sbd_data, fcidumpfile, adetfile, loadname, savename
     )
 
-def tpb_diag(fcidump, adet, bdet, sbd_data, loadname="", savename=""):
+
+def tpb_diag(fcidump, adet, bdet, sbd_data,
+             loadname="", savename="", device=None):
     """
-    Perform TPB diagonalization with data structures (simplified API).
-    
-    This function uses the internal MPI communicator initialized by sbd.init().
-    No need to pass comm parameter.
-    
+    Perform TPB diagonalization with data structures.
+
     Args:
-        fcidump (FCIDump): FCIDUMP object
-        adet (list): Alpha determinants
-        bdet (list): Beta determinants
-        sbd_data (TPB_SBD): Configuration object
-        loadname (str): Path to load initial wavefunction (optional)
-        savename (str): Path to save final wavefunction (optional)
-    
+        fcidump: FCIDump object.
+        adet: Alpha determinants.
+        bdet: Beta determinants.
+        sbd_data: TPB_SBD configuration object.
+        loadname: Path to load initial wavefunction (optional).
+        savename: Path to save final wavefunction (optional).
+        device: Override device ('cpu', 'gpu', or None for default).
+
     Returns:
-        dict: Results dictionary (same as tpb_diag_from_files)
-    
-    Raises:
-        RuntimeError: If init() has not been called
+        dict with keys: energy, density, carryover_adet, carryover_bdet,
+        one_p_rdm, two_p_rdm.
     """
-    if not _initialized:
-        raise RuntimeError("Call sbd.init() first")
-    
-    return _device_module.tpb_diag(
+    _check_initialized()
+    backend = get_backend(device)
+    return backend.tpb_diag(
         _global_comm, sbd_data, fcidump, adet, bdet, loadname, savename
     )
 
-# Legacy API support (backward compatibility)
-def tpb_diag_from_files_legacy(comm, sbd_data, fcidumpfile, adetfile, loadname="", savename=""):
-    """
-    Legacy API: TPB diagonalization from files with explicit comm parameter.
-    
-    This is for backward compatibility. New code should use the simplified API.
-    
-    Args:
-        comm: MPI communicator (from mpi4py)
-        ... (other args same as simplified API)
-    
-    Returns:
-        dict: Results dictionary
-    """
-    # Determine which backend to use based on environment or auto-detect
-    backend_name = os.environ.get('SBD_BACKEND', 'auto').lower()
-    
-    if backend_name == 'auto':
-        backend_name = 'gpu' if _gpu_available() else 'cpu'
-    
-    if backend_name == 'gpu':
-        from . import _core_gpu as backend
-    else:
-        from . import _core_cpu as backend
-    
-    return backend.tpb_diag_from_files(comm, sbd_data, fcidumpfile, adetfile, loadname, savename)
 
-def tpb_diag_legacy(comm, sbd_data, fcidump, adet, bdet, loadname="", savename=""):
-    """
-    Legacy API: TPB diagonalization with explicit comm parameter.
-    
-    This is for backward compatibility. New code should use the simplified API.
-    """
-    backend_name = os.environ.get('SBD_BACKEND', 'auto').lower()
-    
-    if backend_name == 'auto':
-        backend_name = 'gpu' if _gpu_available() else 'cpu'
-    
-    if backend_name == 'gpu':
-        from . import _core_gpu as backend
-    else:
-        from . import _core_cpu as backend
-    
-    return backend.tpb_diag(comm, sbd_data, fcidump, adet, bdet, loadname, savename)
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
 
-# Utility functions
 def available_backends():
-    """
-    Get list of backends that were compiled.
-    
-    Returns:
-        list: List of backend names ('cpu', 'gpu')
-    """
-    import glob
-    
-    backends = []
-    module_dir = os.path.dirname(__file__)
-    
-    if glob.glob(os.path.join(module_dir, '_core_cpu*.so')):
-        backends.append('cpu')
-    
-    if glob.glob(os.path.join(module_dir, '_core_gpu*.so')):
-        backends.append('gpu')
-    
-    return backends
+    """Get list of compiled backends ('cpu', 'gpu')."""
+    return list(_backends.keys())
+
 
 def print_info():
-    """Print SBD information"""
-    print("="*70)
+    """Print SBD information."""
+    print("=" * 60)
     print("SBD (Selected Basis Diagonalization) Python Bindings")
-    print("="*70)
+    print("=" * 60)
     print(f"Version: {__version__}")
-    print(f"Compiled backends: {', '.join(available_backends())}")
-    
+    print(f"Compiled backends: {', '.join(available_backends()) or 'none'}")
+
     if _initialized:
         print(f"\nCurrent session:")
-        print(f"  Device: {get_device()}")
-        print(f"  Communication: {get_comm_backend()}")
+        print(f"  Default device: {_default_device}")
+        print(f"  Communication: {_comm_backend}")
         print(f"  MPI rank: {get_rank()}/{get_world_size()}")
     else:
         print(f"\nNot initialized. Call sbd.init() to start.")
-    
-    print("\nUsage:")
-    print("  import sbd")
-    print("  sbd.init(device='gpu', comm_backend='mpi')")
-    print("  results = sbd.tpb_diag_from_files(...)")
-    print("  sbd.finalize()")
-    print("="*70)
+    print("=" * 60)
 
-# Import sbd_solver module for qiskit-addon-sqd compatibility
+
+# ---------------------------------------------------------------------------
+# Sub-modules
+# ---------------------------------------------------------------------------
+
 from . import sbd_solver
 
 __all__ = [
     # Initialization
     'init',
     'finalize',
-    'finalize_mpi',
     'is_initialized',
-    
-    # MPI Communication Primitives
-    'broadcast',
-    'gather',
-    'all_gather',
-    'reduce',
-    'all_reduce',
-    
-    # Query functions
+
+    # Backend access
+    'get_backend',
+
+    # Query
     'get_device',
     'get_comm_backend',
     'get_rank',
     'get_world_size',
+    'get_comm',
     'barrier',
-    
+
     # Main API
     'TPB_SBD',
     'FCIDump',
     'LoadFCIDump',
     'LoadAlphaDets',
     'makestring',
+    'from_string',
     'tpb_diag_from_files',
     'tpb_diag',
-    
-    # Legacy API
-    'tpb_diag_from_files_legacy',
-    'tpb_diag_legacy',
-    
+
     # Utilities
     'available_backends',
     'print_info',
-    
-    # SBD Solver (qiskit-addon-sqd compatible)
+
+    # Sub-modules
     'sbd_solver',
-    
+
     # Version
     '__version__',
 ]
-
-# Made with Bob

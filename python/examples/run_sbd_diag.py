@@ -1,27 +1,24 @@
 #!/usr/bin/env python3
 """
-Quantum chemistry calculation with simplified SBD API (no mpi4py needed!)
+Standalone SBD diagonalization (no SQD loop, no qiskit dependency).
 
-This example demonstrates the new simplified API where MPI is handled internally.
-Input files (FCIDUMP and determinants) can be specified for any molecule.
+Runs a single TPB diagonalization from an FCIDUMP file and alpha determinant
+file using the SBD library directly.
 
 Usage:
     # CPU backend
-    mpirun -np 8 -x OMP_NUM_THREADS=4 python chemistry_simplified.py --device cpu
-    
-    # GPU backend
-    mpirun -np 8 python chemistry_simplified.py --device gpu
-    
-    # Auto-detect (default)
-    mpirun -np 8 python chemistry_simplified.py
+    mpirun -np 8 -x OMP_NUM_THREADS=4 python run_sbd_diag.py --device cpu
 
-    # N2 molecule example
-    mpirun -np 8 python chemistry_simplified.py \
+    # GPU backend
+    mpirun -np 8 python run_sbd_diag.py --device gpu
+
+    # N2 molecule
+    mpirun -np 8 python run_sbd_diag.py \
         --fcidump ../../data/n2/fcidump.txt \
         --adetfile ../../data/n2/1em3-alpha.txt
 
-    # H2O molecule example
-    mpirun -np 8 python chemistry_simplified.py \
+    # H2O molecule
+    mpirun -np 8 python run_sbd_diag.py \
         --fcidump ../../data/h2o/fcidump.txt \
         --adetfile ../../data/h2o/h2o-1em3-alpha.txt
 """
@@ -209,5 +206,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
-# Made with Bob

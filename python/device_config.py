@@ -1,12 +1,11 @@
 """
-Device configuration helper for SBD Python bindings
+Device configuration helper for SBD Python bindings.
 
 This module provides utilities to easily switch between CPU and GPU execution
 without changing user code.
 """
 
-import os
-from typing import Optional
+import subprocess
 
 
 class DeviceConfig:
@@ -94,29 +93,37 @@ class DeviceConfig:
                   use_precalculated_dets=use_precalculated_dets,
                   max_memory_gb=max_memory_gb)
     
-    @staticmethod
-    def _check_cuda() -> bool:
-        """Check if CUDA is available"""
+    # Cached detection results (None = not yet checked)
+    _cuda_cache: bool | None = None
+    _hip_cache: bool | None = None
+
+    @classmethod
+    def _check_cuda(cls) -> bool:
+        """Check if CUDA is available (cached)."""
+        if cls._cuda_cache is not None:
+            return cls._cuda_cache
         try:
-            import subprocess
-            result = subprocess.run(['nvidia-smi'], 
-                                  capture_output=True, 
-                                  timeout=2)
-            return result.returncode == 0
-        except:
-            return False
-    
-    @staticmethod
-    def _check_hip() -> bool:
-        """Check if HIP/ROCm is available"""
+            result = subprocess.run(
+                ['nvidia-smi'], capture_output=True, timeout=2
+            )
+            cls._cuda_cache = result.returncode == 0
+        except Exception:
+            cls._cuda_cache = False
+        return cls._cuda_cache
+
+    @classmethod
+    def _check_hip(cls) -> bool:
+        """Check if HIP/ROCm is available (cached)."""
+        if cls._hip_cache is not None:
+            return cls._hip_cache
         try:
-            import subprocess
-            result = subprocess.run(['rocm-smi'], 
-                                  capture_output=True, 
-                                  timeout=2)
-            return result.returncode == 0
-        except:
-            return False
+            result = subprocess.run(
+                ['rocm-smi'], capture_output=True, timeout=2
+            )
+            cls._hip_cache = result.returncode == 0
+        except Exception:
+            cls._hip_cache = False
+        return cls._hip_cache
     
     def apply(self, sbd_config) -> None:
         """
@@ -162,29 +169,27 @@ def get_device_info() -> dict:
         info['gpu_available'] = True
         info['gpu_type'] = 'CUDA'
         try:
-            import subprocess
-            result = subprocess.run(['nvidia-smi', '--list-gpus'],
-                                  capture_output=True,
-                                  text=True,
-                                  timeout=2)
+            result = subprocess.run(
+                ['nvidia-smi', '--list-gpus'],
+                capture_output=True, text=True, timeout=2,
+            )
             if result.returncode == 0:
                 info['gpu_count'] = len([l for l in result.stdout.split('\n') if l.strip()])
-        except:
+        except Exception:
             pass
-    
+
     elif info['hip_available']:
         info['gpu_available'] = True
         info['gpu_type'] = 'HIP/ROCm'
         try:
-            import subprocess
-            result = subprocess.run(['rocm-smi', '--showid'],
-                                  capture_output=True,
-                                  text=True,
-                                  timeout=2)
+            result = subprocess.run(
+                ['rocm-smi', '--showid'],
+                capture_output=True, text=True, timeout=2,
+            )
             if result.returncode == 0:
-                info['gpu_count'] = len([l for l in result.stdout.split('\n') 
+                info['gpu_count'] = len([l for l in result.stdout.split('\n')
                                         if 'GPU' in l])
-        except:
+        except Exception:
             pass
     
     return info
@@ -207,5 +212,3 @@ def print_device_info():
     
     print(f"✓ CPU Available: Always")
     print("="*60)
-
-# Made with Bob
