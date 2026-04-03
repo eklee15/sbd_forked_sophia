@@ -105,14 +105,12 @@ def parse_args():
 def main():
     args = parse_args()
     
-    # Import sbd (no mpi4py import needed!)
+    # Import sbd — auto-initializes on first use, but we call init()
+    # explicitly here to set the default device from --device flag.
     import sbd
-    
-    # Initialize SBD with device and communication backend
-    # This internally initializes MPI
-    sbd.init(device=args.device, comm_backend='mpi')
-    
-    # Get rank info (no mpi4py needed!)
+
+    sbd.init(device=args.device)
+
     rank = sbd.get_rank()
     size = sbd.get_world_size()
     

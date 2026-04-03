@@ -5,12 +5,12 @@ This package provides Python bindings for the SBD library.
 
 Usage:
     import sbd
-    sbd.init()                          # initialize MPI, auto-detect device
     results = sbd.tpb_diag_from_files(fcidump, adets, config)
-    sbd.finalize()
+
+    # Explicit init is optional — auto-initialized on first use
+    sbd.init(device='gpu')              # set default device explicitly
 
 Device switching (CPU/GPU) within the same process:
-    sbd.init()
     result_cpu = sbd.tpb_diag(..., device='cpu')
     result_gpu = sbd.tpb_diag(..., device='gpu')
 """
@@ -82,6 +82,11 @@ def init(device='auto', comm_backend='mpi'):
     """
     Initialize SBD with MPI and set the default compute device.
 
+    Calling ``init()`` explicitly is **optional** — SBD auto-initializes on
+    first use with ``device='auto'`` and ``comm_backend='mpi'``.  Call it
+    explicitly only when you need a non-default device or want to control
+    startup timing.
+
     The device can be overridden per-call via the ``device`` parameter on
     ``tpb_diag()``, ``tpb_diag_from_files()``, and ``get_backend()``.
 
@@ -95,9 +100,7 @@ def init(device='auto', comm_backend='mpi'):
     global _default_device, _comm_backend, _comm_module, _global_comm, _initialized
 
     if _initialized:
-        raise RuntimeError(
-            "sbd.init() already called. Call sbd.finalize() first to reinitialize."
-        )
+        return  # already initialized — silently no-op
 
     if not _backends:
         raise RuntimeError(
@@ -130,17 +133,6 @@ def init(device='auto', comm_backend='mpi'):
         )
     _default_device = resolved
     _initialized = True
-
-    # Print init info on rank 0
-    rank = _global_comm.Get_rank()
-    size = _global_comm.Get_size()
-    if rank == 0:
-        print(f"SBD initialized:")
-        print(f"  Default device: {_default_device}")
-        print(f"  Available backends: {list(_backends.keys())}")
-        print(f"  Communication: {comm_backend}")
-        print(f"  MPI ranks: {size}")
-        print(f"  Version: {__version__}")
 
 
 def finalize():
@@ -182,9 +174,9 @@ def get_backend(device=None):
     """
     Get the backend module for the given device.
 
-    Can be called anytime after init(). Passing ``device`` overrides the
-    default set by init() — this is how you switch between CPU and GPU
-    within the same process.
+    Auto-initializes SBD if needed. Passing ``device`` overrides the
+    default — this is how you switch between CPU and GPU within the
+    same process.
 
     Args:
         device: 'cpu', 'gpu', 'auto', or None (use default).
@@ -203,9 +195,10 @@ def get_backend(device=None):
     return _backends[device]
 
 
-def _check_initialized():
+def _ensure_initialized():
+    """Auto-initialize with defaults if init() hasn't been called yet."""
     if not _initialized:
-        raise RuntimeError("SBD not initialized. Call sbd.init() first.")
+        init()
 
 
 # ---------------------------------------------------------------------------
@@ -214,37 +207,37 @@ def _check_initialized():
 
 def get_device():
     """Get the default compute device name."""
-    _check_initialized()
+    _ensure_initialized()
     return _default_device
 
 
 def get_comm_backend():
     """Get the communication backend name."""
-    _check_initialized()
+    _ensure_initialized()
     return _comm_backend
 
 
 def get_rank():
     """Get MPI rank of current process."""
-    _check_initialized()
+    _ensure_initialized()
     return _global_comm.Get_rank()
 
 
 def get_world_size():
     """Get total number of MPI processes."""
-    _check_initialized()
+    _ensure_initialized()
     return _global_comm.Get_size()
 
 
 def get_comm():
     """Get the MPI communicator."""
-    _check_initialized()
+    _ensure_initialized()
     return _global_comm
 
 
 def barrier():
     """MPI barrier — synchronize all processes."""
-    _check_initialized()
+    _ensure_initialized()
     _global_comm.Barrier()
 
 
@@ -254,37 +247,37 @@ def barrier():
 
 def TPB_SBD(device=None):
     """Create TPB_SBD configuration object."""
-    _check_initialized()
+    _ensure_initialized()
     return get_backend(device).TPB_SBD()
 
 
 def FCIDump(device=None):
     """Create FCIDump object."""
-    _check_initialized()
+    _ensure_initialized()
     return get_backend(device).FCIDump()
 
 
 def LoadFCIDump(filename, device=None):
     """Load FCIDUMP file."""
-    _check_initialized()
+    _ensure_initialized()
     return get_backend(device).LoadFCIDump(filename)
 
 
 def LoadAlphaDets(filename, bit_length, total_bit_length, device=None):
     """Load alpha determinants from file."""
-    _check_initialized()
+    _ensure_initialized()
     return get_backend(device).LoadAlphaDets(filename, bit_length, total_bit_length)
 
 
 def makestring(config, bit_length, total_bit_length, device=None):
     """Convert determinant to string representation."""
-    _check_initialized()
+    _ensure_initialized()
     return get_backend(device).makestring(config, bit_length, total_bit_length)
 
 
 def from_string(s, bit_length, total_bit_length, device=None):
     """Convert binary string to determinant format."""
-    _check_initialized()
+    _ensure_initialized()
     return get_backend(device).from_string(s, bit_length, total_bit_length)
 
 
@@ -305,7 +298,7 @@ def tpb_diag_from_files(fcidumpfile, adetfile, sbd_data,
         dict with keys: energy, density, carryover_adet, carryover_bdet,
         one_p_rdm, two_p_rdm.
     """
-    _check_initialized()
+    _ensure_initialized()
     backend = get_backend(device)
     return backend.tpb_diag_from_files(
         _global_comm, sbd_data, fcidumpfile, adetfile, loadname, savename
@@ -330,7 +323,7 @@ def tpb_diag(fcidump, adet, bdet, sbd_data,
         dict with keys: energy, density, carryover_adet, carryover_bdet,
         one_p_rdm, two_p_rdm.
     """
-    _check_initialized()
+    _ensure_initialized()
     backend = get_backend(device)
     return backend.tpb_diag(
         _global_comm, sbd_data, fcidump, adet, bdet, loadname, savename
@@ -360,7 +353,7 @@ def print_info():
         print(f"  Communication: {_comm_backend}")
         print(f"  MPI rank: {get_rank()}/{get_world_size()}")
     else:
-        print(f"\nNot initialized. Call sbd.init() to start.")
+        print(f"\nNot initialized. Call sbd.init() or any API function to start.")
     print("=" * 60)
 
 

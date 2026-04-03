@@ -65,7 +65,8 @@ mpirun -np 8 python run_sqd_sbd.py \
 MPI decomposition flags, SBD solver flags.
 Run `python run_sqd_sbd.py --help` for the full list.
 
-**Requirements:** `sbd`, `mpi4py`, `qiskit-addon-sqd`, `pyscf`, `numpy`
+**Requirements:** `sbd`, `mpi4py`, `pyscf`, `numpy`, and the MPI-aware fork of qiskit-addon-sqd:
+[hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd) (`patch-ferminon-sbd` branch)
 
 ## MPI Decomposition
 
@@ -90,15 +91,14 @@ Both backends are loaded at import time. Select per-call via `--device`:
 --device auto   # GPU if available, else CPU
 ```
 
-Within Python, backends can also be switched at runtime:
+Within Python, backends can also be switched at runtime without re-initialization:
 
 ```python
 import sbd
-sbd.init(device='cpu')
 
-# Override default for a single call
-result_gpu = sbd.tpb_diag(..., device='gpu')
+# No init() needed — auto-initializes on first call
 result_cpu = sbd.tpb_diag(..., device='cpu')
+result_gpu = sbd.tpb_diag(..., device='gpu')
 ```
 
 ## Available Test Data
@@ -121,5 +121,5 @@ Smaller thresholds = more determinants = higher accuracy.
 
 ## See Also
 
-- [Python Bindings README](../../README_PYTHON.md) — Installation, API reference
+- [Python Bindings README](../../.github/README.md) — Installation, API reference
 - [SBD README](../../README.md) — C++ library overview

@@ -1,5 +1,8 @@
 """SQD loop using SBD solver with qiskit-addon-sqd.
 
+Requires the MPI-aware fork of qiskit-addon-sqd:
+    pip install git+https://github.com/hfwen0502/qiskit-addon-sqd@patch-ferminon-sbd
+
 Runs the self-consistent SQD workflow: subsample bitstrings into batches,
 diagonalize via SBD, update occupancies, repeat.
 
@@ -125,11 +128,7 @@ def main():
     if device_str == "auto":
         device_str = "gpu" if DeviceConfig._check_cuda() else "cpu"
 
-    try:
-        sbd.init(device=device_str, comm_backend="mpi")
-    except RuntimeError as e:
-        if "already called" not in str(e):
-            raise
+    sbd.init(device=device_str)
 
     if rank == 0:
         print_device_info()

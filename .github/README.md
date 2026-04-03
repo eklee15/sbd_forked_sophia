@@ -66,8 +66,7 @@ python -c "import sbd; print(sbd.available_backends())"
 ```python
 import sbd
 
-sbd.init(device='cpu')          # or 'gpu', 'auto'
-
+# No explicit init() needed — auto-initializes on first use
 config = sbd.TPB_SBD()
 config.adet_comm_size = 2
 config.bdet_comm_size = 2
@@ -86,15 +85,18 @@ sbd.finalize()
 
 ### Runtime CPU/GPU Switching
 
-Both backends are loaded at import time into separate namespaces. Switch per-call:
+Both backends are loaded at import time into separate namespaces. Switch per-call with the `device` parameter — no re-initialization needed:
 
 ```python
 import sbd
-sbd.init(device='cpu')   # default device
 
-# Override per call
+# Override per call — auto-initializes on first use
 result_cpu = sbd.tpb_diag(..., device='cpu')
 result_gpu = sbd.tpb_diag(..., device='gpu')
+
+# Or set a default device explicitly
+sbd.init(device='gpu')   # optional — only if you want a non-auto default
+result = sbd.tpb_diag(...)  # uses GPU
 
 # Or get the backend module directly
 backend = sbd.get_backend('gpu')
@@ -104,11 +106,8 @@ fcidump = backend.LoadFCIDump('fcidump.txt')
 ### Resource Cleanup
 
 ```python
-try:
-    sbd.init(device='gpu')
-    results = sbd.tpb_diag_from_files(...)
-finally:
-    sbd.finalize()
+results = sbd.tpb_diag_from_files(...)
+sbd.finalize()  # optional — syncs GPU and resets state
 ```
 
 `finalize()` calls `cudaDeviceSynchronize()` on GPU backends and resets Python state. It does **not** call `cudaDeviceReset()` (avoids CUDA-aware MPI conflicts) or `MPI_Finalize()` (handled by mpi4py).
@@ -126,6 +125,7 @@ from sbd.sbd_solver import solve_sci_batch
 from sbd.device_config import DeviceConfig
 from qiskit_addon_sqd.fermion import diagonalize_fermionic_hamiltonian
 
+# No sbd.init() needed — auto-initializes on first solver call
 sbd_solver = partial(
     solve_sci_batch,
     mpi_comm=MPI.COMM_WORLD,
@@ -167,7 +167,7 @@ See [python/examples/README.md](python/examples/README.md) for usage details.
 
 | Function | Description |
 |----------|-------------|
-| `sbd.init(device, comm_backend)` | Initialize MPI, set default device (`'cpu'`, `'gpu'`, `'auto'`) |
+| `sbd.init(device, comm_backend)` | **Optional.** Initialize MPI, set default device (`'cpu'`, `'gpu'`, `'auto'`). Auto-called on first use with defaults. |
 | `sbd.finalize()` | Sync GPU, reset state. Does not call `MPI_Finalize` |
 | `sbd.is_initialized()` | Check init status |
 
