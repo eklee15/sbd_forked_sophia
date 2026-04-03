@@ -51,6 +51,13 @@ mpirun -np 4 python run_sqd_sbd.py \
     --device cpu \
     --adet_comm_size 2 --bdet_comm_size 2
 
+# H2O with example hardware bitstrings (FCIDUMP from ../../data/h2o/)
+mpirun -np 4 python run_sqd_sbd.py \
+    --fcidump ../../data/h2o/fcidump.txt \
+    --counts count_dict_h2o.json \
+    --device cpu \
+    --adet_comm_size 2 --bdet_comm_size 2
+
 # Custom system with hardware bitstrings
 mpirun -np 8 python run_sqd_sbd.py \
     --fcidump /path/to/fci_dump.txt \
@@ -59,6 +66,22 @@ mpirun -np 8 python run_sqd_sbd.py \
     --device gpu \
     --adet_comm_size 2 --bdet_comm_size 2 --task_comm_size 2
 ```
+
+**count_dict.json format:** A JSON object mapping bitstrings to shot counts, as
+produced by a quantum device or simulator. Each bitstring has length `2 × NORB` —
+the first `NORB` bits are alpha (spin-up) orbitals and the last `NORB` are beta
+(spin-down):
+
+```json
+{
+  "010000000010001010000001010000000001000010100100": 16,
+  "000010001110000000000010001001000110000000000100": 12,
+  "000101000000010011000000000010000000001001000110": 8
+}
+```
+
+An example is provided at `count_dict_h2o.json` (matches `../../data/h2o/fcidump.txt`,
+NORB=24, 5α+5β electrons).
 
 **Key options:** `--fcidump` (required), `--counts`, `--samples`,
 `--samples_per_batch`, `--num_batches`, `--max_iterations`, `--device`,
