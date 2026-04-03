@@ -52,7 +52,7 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
     // ========================================================================
     // Bind FCIDump structure
     // ========================================================================
-    py::class_<sbd::FCIDump>(m, "FCIDump", "FCIDUMP data structure")
+    py::class_<sbd::FCIDump>(m, "FCIDump", py::module_local(), "FCIDUMP data structure")
         .def(py::init<>())
         .def_readwrite("header", &sbd::FCIDump::header,
                       "Header information as dictionary (map<string, string>)")
@@ -62,7 +62,7 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
     // ========================================================================
     // Bind TPB SBD configuration structure
     // ========================================================================
-    py::class_<sbd::tpb::SBD>(m, "TPB_SBD", "Configuration for TPB diagonalization")
+    py::class_<sbd::tpb::SBD>(m, "TPB_SBD", py::module_local(), "Configuration for TPB diagonalization")
         .def(py::init<>())
         .def_readwrite("task_comm_size", &sbd::tpb::SBD::task_comm_size,
                       "Task communicator size")
