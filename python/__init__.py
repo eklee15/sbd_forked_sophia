@@ -360,7 +360,10 @@ def print_info():
 # Sub-modules
 # ---------------------------------------------------------------------------
 
-from . import sbd_solver
+try:
+    from . import sbd_solver
+except ImportError:
+    sbd_solver = None  # pyscf or qiskit-addon-sqd not installed
 
 __all__ = [
     # Initialization

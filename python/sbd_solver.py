@@ -16,14 +16,17 @@ from typing import Callable
 
 import numpy as np
 from mpi4py import MPI
-from pyscf import tools
+
+try:
+    from pyscf import tools as pyscf_tools
+except ImportError:
+    pyscf_tools = None
 
 try:
     from qiskit_addon_sqd.fermion import SCIResult, SCIState
 except ImportError:
-    raise ImportError(
-        "qiskit-addon-sqd is required. Install it with: pip install qiskit-addon-sqd"
-    )
+    SCIResult = None
+    SCIState = None
 
 
 def _resolve_backend(device_config=None):
@@ -72,6 +75,11 @@ def solve_sci(
     Returns:
         The diagonalization result as SCIResult.
     """
+    if SCIResult is None:
+        raise ImportError(
+            "qiskit-addon-sqd is required for solve_sci. "
+            "Install with: pip install qiskit-addon-sqd"
+        )
     backend = _resolve_backend(device_config)
 
     if mpi_comm is None:
@@ -91,7 +99,7 @@ def solve_sci(
     try:
         fcidump_path = sbd_dir / "fcidump.txt"
         if mpi_rank == 0:
-            tools.fcidump.from_integrals(
+            pyscf_tools.fcidump.from_integrals(
                 str(fcidump_path), one_body_tensor, two_body_tensor, norb, nelec,
             )
         mpi_comm.Barrier()
@@ -279,7 +287,7 @@ def solve_sci_batch(
     try:
         fcidump_path = sbd_dir / "fcidump.txt"
         if mpi_rank == 0:
-            tools.fcidump.from_integrals(
+            pyscf_tools.fcidump.from_integrals(
                 str(fcidump_path), one_body_tensor, two_body_tensor, norb, nelec,
             )
         mpi_comm.Barrier()
