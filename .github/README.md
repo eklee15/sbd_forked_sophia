@@ -37,6 +37,10 @@ export CXX=/usr/bin/clang++
 export NVHPC_HOME=/opt/nvidia/hpc_sdk/Linux_x86_64/2025/compilers
 export CC=nvc
 export CXX=nvc++
+# Clear these — inherited flags (e.g. from conda) may be gcc-specific
+# and break nvc++ compilation
+export CFLAGS=''
+export CXXFLAGS=''
 ```
 
 ### Build
