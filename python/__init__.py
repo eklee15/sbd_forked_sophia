@@ -78,14 +78,13 @@ def _resolve_device(device):
     return device
 
 
-def init(device='auto', comm_backend='mpi'):
+def init(device='cpu', comm_backend='mpi'):
     """
     Initialize SBD with MPI and set the default compute device.
 
     Calling ``init()`` explicitly is **optional** — SBD auto-initializes on
-    first use with ``device='auto'`` and ``comm_backend='mpi'``.  Call it
-    explicitly only when you need a non-default device or want to control
-    startup timing.
+    first use with ``device='cpu'`` and ``comm_backend='mpi'``.  Call it
+    explicitly only when you need GPU or want to control startup timing.
 
     The device can be overridden per-call via the ``device`` parameter on
     ``tpb_diag()``, ``tpb_diag_from_files()``, and ``get_backend()``.

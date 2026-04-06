@@ -34,7 +34,7 @@ def parse_args():
     )
     
     # Device selection
-    parser.add_argument('--device', choices=['auto', 'cpu', 'gpu'], default='auto',
+    parser.add_argument('--device', choices=['auto', 'cpu', 'gpu'], default='cpu',
                        help='Device to use (auto=detect, cpu=force CPU, gpu=force GPU)')
     
     # Input files
