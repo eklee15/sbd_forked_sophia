@@ -60,11 +60,11 @@ def parse_args():
     # Diagonalization method and convergence
     parser.add_argument('--method', type=int, default=0, choices=[0, 1, 2, 3],
                        help='Diagonalization method: 0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham')
-    parser.add_argument('--max_it', '--max-iter', type=int, default=100, dest='max_it',
+    parser.add_argument('--iteration', '--max_it', type=int, default=100, dest='max_it',
                        help='Maximum number of iterations')
-    parser.add_argument('--max_nb', type=int, default=10,
+    parser.add_argument('--block', '--max_nb', type=int, default=10, dest='max_nb',
                        help='Maximum number of basis vectors')
-    parser.add_argument('--eps', '--tolerance', type=float, default=1e-3, dest='eps',
+    parser.add_argument('--tolerance', '--eps', type=float, default=1e-3, dest='eps',
                        help='Convergence tolerance')
     parser.add_argument('--max_time', type=float, default=1e10,
                        help='Maximum time in seconds')
@@ -74,15 +74,15 @@ def parse_args():
                        help='Initialization method')
     parser.add_argument('--do_shuffle', type=int, default=0, choices=[0, 1],
                        help='Shuffle determinants (0=no, 1=yes)')
-    parser.add_argument('--do_rdm', '--rdm', type=int, default=0, choices=[0, 1], dest='do_rdm',
+    parser.add_argument('--rdm', '--do_rdm', type=int, default=0, choices=[0, 1], dest='do_rdm',
                        help='Calculate RDM (0=density only, 1=full RDM)')
     
     # Carryover determinant selection
     parser.add_argument('--carryover_type', type=int, default=0,
                        help='Carryover determinant selection type')
-    parser.add_argument('--ratio', type=float, default=0.0,
+    parser.add_argument('--carryover_ratio', '--ratio', type=float, default=0.0, dest='ratio',
                        help='Carryover ratio')
-    parser.add_argument('--threshold', type=float, default=0.0,
+    parser.add_argument('--carryover_threshold', '--threshold', type=float, default=0.0, dest='threshold',
                        help='Carryover threshold')
     
     # Determinant representation
@@ -125,9 +125,13 @@ def main():
     config = sbd.TPB_SBD()
     config.max_it = args.max_it
     config.eps = args.eps
-    config.method = 0  # Davidson
-    config.do_rdm = 0  # Density only
-    config.bit_length = 20
+    config.method = args.method
+    config.max_nb = args.max_nb
+    config.do_rdm = args.do_rdm
+    config.bit_length = args.bit_length
+    config.carryover_type = args.carryover_type
+    config.ratio = args.ratio
+    config.threshold = args.threshold
     config.adet_comm_size = args.adet_comm_size
     config.bdet_comm_size = args.bdet_comm_size
     config.task_comm_size = args.task_comm_size

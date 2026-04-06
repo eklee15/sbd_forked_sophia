@@ -31,7 +31,7 @@ mpirun -np 8 python run_sbd_diag.py \
 ```
 
 **Key options:** `--device`, `--fcidump`, `--adetfile`, `--adet_comm_size`,
-`--bdet_comm_size`, `--task_comm_size`, `--method`, `--eps`, `--max_it`.
+`--bdet_comm_size`, `--task_comm_size`, `--method`, `--tolerance`, `--iteration`.
 Run `python run_sbd_diag.py --help` for the full list.
 
 **Requirements:** `sbd`, `mpi4py`
@@ -85,11 +85,34 @@ NORB=24, 5α+5β electrons).
 
 **Key options:** `--fcidump` (required), `--counts`, `--samples`,
 `--samples_per_batch`, `--num_batches`, `--max_iterations`, `--device`,
-MPI decomposition flags, SBD solver flags.
+`--method`, `--tolerance`, `--iteration`, MPI decomposition flags.
 Run `python run_sqd_sbd.py --help` for the full list.
 
 **Requirements:** `sbd`, `mpi4py`, `pyscf`, `numpy`, and the MPI-aware fork of qiskit-addon-sqd:
 [hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd) (`patch-ferminon-sbd` branch)
+
+#### SQD Parameter Guide
+
+SQD samples bitstrings from a quantum device, uses **configuration recovery** to
+correct noisy samples using an orbital occupancy vector, then subsamples into
+batches for diagonalization. Occupancies are averaged across batches and fed back
+to configuration recovery — this self-consistent loop typically converges in 3–5
+iterations. On the first iteration, no occupancies are available yet, so the raw
+samples are simply filtered by correct electron count (Hamming weight
+postselection).
+
+| Parameter | What it controls | Typical values |
+|-----------|-----------------|----------------|
+| `--counts FILE` | Load hardware bitstrings from a JSON file (use one or the other) | 10K–1M+ shots |
+| `--samples N` | Generate N uniform random bitstrings for testing (default) | 10K–1M+ |
+| `--samples_per_batch` | Subspace dimension per batch (accuracy vs. cost) | 300–800 (small), 1M+ (production) |
+| `--num_batches` | Independent subsamples for averaging occupancies | 3–10 (small), up to 100 (large) |
+| `--max_iterations` | Self-consistent recovery loop iterations | 3–5 |
+
+**MPI work distribution:** All ranks diagonalize each batch together, then move
+to the next batch sequentially. Within each diagonalization, ranks form a 3D grid:
+`adet_comm_size × bdet_comm_size × task_comm_size = total ranks`. More batches
+increases wall time linearly but does not require more ranks.
 
 ### 3. run_sqd_fulqrum.py — SQD Loop with Fulqrum Eigensolver
 

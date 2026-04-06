@@ -53,16 +53,16 @@ def parse_args():
     p.add_argument("--num_batches", type=int, default=3)
     p.add_argument("--max_iterations", type=int, default=5)
 
-    # SBD solver parameters
+    # SBD solver parameters (names match C++ CLI: sbd/include/sbd/chemistry/tpb/sbdiag.h)
     p.add_argument("--method", type=int, default=0,
                    help="0=Davidson, 1=Davidson+Ham")
-    p.add_argument("--eps", type=float, default=1e-8)
-    p.add_argument("--max_it", type=int, default=100)
-    p.add_argument("--max_nb", type=int, default=50)
-    p.add_argument("--do_rdm", type=int, default=1)
+    p.add_argument("--tolerance", "--eps", type=float, default=1e-8, dest="eps")
+    p.add_argument("--iteration", "--max_it", type=int, default=100, dest="max_it")
+    p.add_argument("--block", "--max_nb", type=int, default=50, dest="max_nb")
+    p.add_argument("--rdm", "--do_rdm", type=int, default=1, dest="do_rdm")
     p.add_argument("--carryover_type", type=int, default=1)
-    p.add_argument("--ratio", type=float, default=0.1)
-    p.add_argument("--threshold", type=float, default=1e-4)
+    p.add_argument("--carryover_ratio", "--ratio", type=float, default=0.1, dest="ratio")
+    p.add_argument("--carryover_threshold", "--threshold", type=float, default=1e-4, dest="threshold")
 
     # MPI sub-communicator sizes
     p.add_argument("--adet_comm_size", type=int, default=1)
