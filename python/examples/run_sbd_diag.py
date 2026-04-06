@@ -72,7 +72,7 @@ def parse_args():
     # Initialization and options
     parser.add_argument('--init', type=int, default=0,
                        help='Initialization method')
-    parser.add_argument('--do_shuffle', type=int, default=0, choices=[0, 1],
+    parser.add_argument('--shuffle', '--do_shuffle', type=int, default=0, dest='do_shuffle',
                        help='Shuffle determinants (0=no, 1=yes)')
     parser.add_argument('--rdm', '--do_rdm', type=int, default=0, choices=[0, 1], dest='do_rdm',
                        help='Calculate RDM (0=density only, 1=full RDM)')

@@ -54,12 +54,13 @@ def parse_args():
     p.add_argument("--max_iterations", type=int, default=5)
 
     # SBD solver parameters (names match C++ CLI: sbd/include/sbd/chemistry/tpb/sbdiag.h)
-    p.add_argument("--method", type=int, default=0,
-                   help="0=Davidson, 1=Davidson+Ham")
+    p.add_argument("--method", type=int, default=0, choices=[0, 1, 2, 3],
+                   help="0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham")
     p.add_argument("--tolerance", "--eps", type=float, default=1e-8, dest="eps")
     p.add_argument("--iteration", "--max_it", type=int, default=100, dest="max_it")
     p.add_argument("--block", "--max_nb", type=int, default=50, dest="max_nb")
     p.add_argument("--rdm", "--do_rdm", type=int, default=1, dest="do_rdm")
+    p.add_argument("--shuffle", "--do_shuffle", type=int, default=0, dest="do_shuffle")
     p.add_argument("--carryover_type", type=int, default=1)
     p.add_argument("--carryover_ratio", "--ratio", type=float, default=0.1, dest="ratio")
     p.add_argument("--carryover_threshold", "--threshold", type=float, default=1e-4, dest="threshold")
@@ -168,6 +169,7 @@ def main():
         "max_nb": args.max_nb,
         "max_time": 3600.0,
         "do_rdm": args.do_rdm,
+        "do_shuffle": args.do_shuffle,
         "carryover_type": args.carryover_type,
         "ratio": args.ratio,
         "threshold": args.threshold,
