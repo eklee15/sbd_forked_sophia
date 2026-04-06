@@ -48,16 +48,18 @@ def parse_args():
                    help="Number of uniform random samples (used when --counts is not given)")
     p.add_argument("--device", choices=["auto", "cpu", "gpu"], default="cpu")
 
-    # SQD parameters
+    # SQD outer-loop parameters
     p.add_argument("--samples_per_batch", type=int, default=300)
     p.add_argument("--num_batches", type=int, default=3)
-    p.add_argument("--max_iterations", type=int, default=5)
+    p.add_argument("--max_iterations", type=int, default=5,
+                   help="SQD self-consistent loop iterations (not SBD solver iterations)")
 
     # SBD solver parameters (names match C++ CLI: sbd/include/sbd/chemistry/tpb/sbdiag.h)
     p.add_argument("--method", type=int, default=0, choices=[0, 1, 2, 3],
                    help="0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham")
     p.add_argument("--tolerance", "--eps", type=float, default=1e-8, dest="eps")
-    p.add_argument("--iteration", "--max_it", type=int, default=100, dest="max_it")
+    p.add_argument("--iteration", "--max_it", type=int, default=100, dest="max_it",
+                   help="Max SBD Davidson iterations per diagonalization")
     p.add_argument("--block", "--max_nb", type=int, default=50, dest="max_nb")
     p.add_argument("--rdm", "--do_rdm", type=int, default=1, dest="do_rdm")
     p.add_argument("--shuffle", "--do_shuffle", type=int, default=0, dest="do_shuffle")
