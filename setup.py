@@ -156,6 +156,7 @@ if build_cpu:
     else:
         cpu_compile_args = [
             '-DSBD_TRADMODE',
+            '-DOMPI_SKIP_MPICXX',
             '-std=c++17', '-fopenmp', '-O3',
             '-Wno-sign-compare', '-Wno-unused-variable', '-fPIC',
             '-DSBD_MODULE_NAME=_core_cpu',
