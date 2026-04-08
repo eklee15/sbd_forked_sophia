@@ -31,6 +31,19 @@ jobs:
       - name: Verify import
         run: |
           python -c "
+          # Debug: try importing the C++ extension directly to see the real error
+          try:
+              from sbd import _core_cpu
+              print('_core_cpu loaded OK')
+          except ImportError as e:
+              print(f'_core_cpu import failed: {e}')
+              # Check where the .so is
+              import sbd, os
+              pkg_dir = os.path.dirname(sbd.__file__)
+              print(f'Package dir: {pkg_dir}')
+              print(f'Contents: {os.listdir(pkg_dir)}')
+              raise
+
           import sbd
           backends = sbd.available_backends()
           print('Backends:', backends)
