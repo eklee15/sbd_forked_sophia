@@ -65,6 +65,10 @@ def parse_args():
     p.add_argument("--nelec_b", type=int, default=None,
                    help="Number of beta electrons (auto-detected from FCIDUMP)")
 
+    # Profiling
+    p.add_argument("--profile", action="store_true", default=False,
+                   help="Print resource usage summary after completion")
+
     # SQD loop parameters
     p.add_argument("--max_iterations", type=int, default=20)
     p.add_argument("--samples_per_batch", type=int, default=800)
@@ -105,6 +109,16 @@ def unique_alpha_beta_combined(bitstrings):
 def main():
     args = parse_args()
     total_start = time.perf_counter()
+
+    # Optional profiler
+    monitor = None
+    if args.profile:
+        try:
+            from qiskit_addon_sqd.profiler import ResourceMonitor
+            monitor = ResourceMonitor(gpu=False)
+            monitor.start()
+        except ImportError:
+            print("Warning: --profile requires qiskit-addon-sqd; skipping profiling")
 
     # --- Auto-detect system parameters from FCIDUMP ---
     norb_fcidump, nelec_total, ms2 = parse_fcidump_header(args.fcidump)
@@ -290,6 +304,11 @@ def main():
         print(f"  Iter {i}: E = {e:.10f}")
     print(f"\n  Final electronic energy: {energies[-1]:.10f}")
     print(f"  Converged: {converged}")
+
+
+    if monitor is not None:
+        monitor.stop()
+        monitor.report()
 
 
 if __name__ == "__main__":
