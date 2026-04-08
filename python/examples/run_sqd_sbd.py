@@ -196,7 +196,7 @@ def main():
     monitor = None
     if args.profile:
         from qiskit_addon_sqd.profiler import ResourceMonitor
-        monitor = ResourceMonitor()
+        monitor = ResourceMonitor(gpu=(args.device != "cpu"))
         monitor.start()
 
     # --- Run SQD loop ---
