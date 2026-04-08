@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenmpi-dev libopenblas-dev
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install numpy pybind11 mpi4py
+
+      - name: Build SBD (CPU backend)
+        env:
+          MPI_HOME: /usr
+          BLAS_LIB_PATH: /usr/lib/x86_64-linux-gnu
+        run: pip install -e . --no-build-isolation
+
+      - name: Verify import
+        run: |
+          python -c "
+          import sbd
+          backends = sbd.available_backends()
+          print('Backends:', backends)
+          assert 'cpu' in backends, f'CPU backend missing: {backends}'
+          print('OK')
+          "
+
+      - name: Run H2O diag test
+        run: |
+          cd python/examples
+          mpirun --allow-run-as-root -np 2 -x OMP_NUM_THREADS=1 \
+            python run_sbd_diag.py \
+              --device cpu \
+              --fcidump ../../data/h2o/fcidump.txt \
+              --adetfile ../../data/h2o/h2o-1em3-alpha.txt \
+              --adet_comm_size 2 \
+              --tolerance 1e-4 \
+              --iteration 50 \
+            | tee /tmp/sbd_output.txt
+
+      - name: Validate energy
+        run: |
+          energy=$(grep -oP 'Ground state energy: \K[-0-9.]+' /tmp/sbd_output.txt)
+          echo "Got energy: $energy"
+          python -c "
+          energy = float('$energy')
+          expected = -76.2359466293
+          diff = abs(energy - expected)
+          print(f'Energy: {energy:.10f}, Expected: {expected:.10f}, Diff: {diff:.2e}')
+          assert diff < 1e-6, f'Energy mismatch: {energy} vs {expected}'
+          print('PASS')
+          "
