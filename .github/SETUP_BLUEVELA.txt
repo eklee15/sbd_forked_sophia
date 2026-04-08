@@ -1,0 +1,122 @@
+# SBD Python Bindings — Bluevela Setup
+# =====================================
+# Updated: 2026-04-06
+#
+# Uses Python 3.12 (miniconda3) with an ld wrapper to work around
+# conda compiler_compat issue with nvc++.
+
+# 1. ld wrapper (filters -B flags that break nvc++ linking)
+#    Already installed at /u/hfwen/qcsc/bin/ld
+#    Must be on PATH before system ld.
+mkdir -p /u/hfwen/qcsc/bin
+cat > /u/hfwen/qcsc/bin/ld << 'WRAPPER'
+#!/bin/bash
+# Filter -B flags from conda compiler_compat that break nvc++ linking.
+# Delegates to LLVM lld for fast, compatible linking.
+args=()
+skip_next=false
+for arg in "$@"; do
+    if $skip_next; then skip_next=false; continue; fi
+    case "$arg" in
+        -B) skip_next=true ;;
+        -B*) ;;
+        */compiler_compat) ;;
+        *) args+=("$arg") ;;
+    esac
+done
+exec /u/hfwen/tools/llvm/bin/ld.lld "${args[@]}"
+WRAPPER
+chmod +x /u/hfwen/qcsc/bin/ld
+
+# 2. Create venv from conda Python 3.12
+/u/hfwen/miniconda3/bin/python3 -m venv /u/hfwen/qcsc/venv
+source /u/hfwen/qcsc/venv/bin/activate
+pip install --upgrade pip setuptools wheel
+pip install numpy pybind11 mpi4py pyscf
+
+# 3. Clone repo (if not already cloned)
+cd /u/hfwen/qcsc
+git clone https://github.com/hfwen0502/sbd.git
+cd sbd
+
+# 4. Environment variables
+export PATH=/u/hfwen/qcsc/bin:/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/compilers/bin:/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/comm_libs/12.9/hpcx/hpcx-2.25.1/ompi/bin:$PATH
+export MPI_HOME=/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/comm_libs/12.9/hpcx/hpcx-2.25.1/ompi
+export BLAS_LIB_PATH=/u/walkup/OpenBLAS-0.3.30/lib
+export BLAS_LIBS=openblas
+export OMPI_CXX=nvc++
+export LD_LIBRARY_PATH=$MPI_HOME/lib:$BLAS_LIB_PATH:$LD_LIBRARY_PATH
+
+# 5. Build (both CPU + GPU backends)
+SBD_BUILD_BACKEND=both CC=nvc CXX=nvc++ CFLAGS='' CXXFLAGS='' \
+    pip install -e . --no-build-isolation
+
+# 6. Install qiskit-addon-sqd (MPI-aware fork, for SQD workflow)
+pip install git+https://github.com/hfwen0502/qiskit-addon-sqd@patch-ferminon-sbd
+
+# 7. Verify (on a compute node — MPI does not work on login nodes)
+python -c "import sbd; print(sbd.available_backends())"
+# Expected: ['cpu', 'gpu']
+
+# 8. Run tests (submit via LSF)
+cat > test_full.sh << 'JOBEOF'
+#!/bin/bash
+#BSUB -o /u/hfwen/qcsc/sbd/%J.out
+#BSUB -e /u/hfwen/qcsc/sbd/%J.err
+#BSUB -R "span[ptile=8]"
+#BSUB -n 8
+#BSUB -gpu "num=8:mode=exclusive_process"
+#BSUB -W 10
+#BSUB -G grp_qcsc_diag1
+
+source /u/hfwen/qcsc/venv/bin/activate
+export PATH=/u/hfwen/qcsc/bin:/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/compilers/bin:/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/comm_libs/12.9/hpcx/hpcx-2.25.1/ompi/bin:$PATH
+export LD_LIBRARY_PATH=/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/comm_libs/12.9/hpcx/hpcx-2.25.1/ompi/lib:/u/walkup/OpenBLAS-0.3.30/lib:$LD_LIBRARY_PATH
+
+cd /u/hfwen/qcsc/sbd/python/examples
+
+echo "=== CPU diag test ==="
+mpirun -np 2 -x OMP_NUM_THREADS=1 python run_sbd_diag.py \
+    --device cpu --fcidump ../../data/h2o/fcidump.txt \
+    --adetfile ../../data/h2o/h2o-1em3-alpha.txt \
+    --adet_comm_size 2 --tolerance 1e-4 --iteration 50
+
+echo "=== GPU diag test ==="
+mpirun -np 1 -x OMP_NUM_THREADS=1 python run_sbd_diag.py \
+    --device gpu --fcidump ../../data/h2o/fcidump.txt \
+    --adetfile ../../data/h2o/h2o-1em3-alpha.txt \
+    --tolerance 1e-4 --iteration 50
+
+echo "=== SQD + SBD (GPU) test ==="
+mpirun -np 1 -x OMP_NUM_THREADS=1 python run_sqd_sbd.py \
+    --fcidump ../../data/h2o/fcidump.txt \
+    --counts count_dict_h2o.json \
+    --device gpu \
+    --samples_per_batch 30 --num_batches 2 --max_iterations 2 \
+    --tolerance 1e-4 --iteration 50
+
+echo "=== DONE ==="
+JOBEOF
+
+bsub < test_full.sh
+
+# Expected results:
+# - CPU diag H2O energy: -76.2359466293 Hartree
+# - GPU diag H2O energy: -76.2359466293 Hartree (matches CPU to 13 digits)
+# - SQD+SBD total energy: -18.9902836024 Hartree (converges in 2 iterations)
+# - GPU Davidson ~72x faster than CPU for H2O (0.09s vs 6.7s)
+#
+# Key paths:
+#   ld wrapper:        /u/hfwen/qcsc/bin/ld
+#   venv:              /u/hfwen/qcsc/venv
+#   SBD repo:          /u/hfwen/qcsc/sbd
+#   LLVM/lld:          /u/hfwen/tools/llvm/bin
+#   NVIDIA HPC SDK:    /proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1
+#   OpenBLAS:          /u/walkup/OpenBLAS-0.3.30/lib/libopenblas.a
+#
+# Known issues:
+# - Upstream RIKEN GPU code (b12db05) has a bug in the RHF thrust path
+#   (UHF refactoring broke it). Our fork reverts to the working pre-UHF
+#   GPU code. Reported to developer.
+# - conda Python needs the ld wrapper because it injects -B compiler_compat
+#   which causes nvc++ to fail with "read in flex scanner failed".
