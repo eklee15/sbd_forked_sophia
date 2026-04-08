@@ -92,6 +92,10 @@ def parse_args():
     # Output options
     parser.add_argument('--dump_matrix_form_wf', default='',
                        help='Filename to dump wavefunction in matrix form')
+
+    # Profiling
+    parser.add_argument('--profile', action='store_true', default=False,
+                       help='Print resource usage summary (requires qiskit-addon-sqd)')
     
     # GPU-specific options (only used with GPU backend)
     parser.add_argument('--use_precalculated_dets', type=int, default=1, choices=[0, 1],
@@ -149,40 +153,51 @@ def main():
         print(f"  Alpha dets: {args.adetfile}")
         print()
     
+    # Optional profiler
+    monitor = None
+    if args.profile:
+        try:
+            from qiskit_addon_sqd.profiler import ResourceMonitor
+            monitor = ResourceMonitor()
+            monitor.start()
+        except ImportError:
+            if rank == 0:
+                print("Warning: --profile requires qiskit-addon-sqd; skipping profiling")
+
     # Run calculation (no comm parameter needed!)
     try:
         if rank == 0:
             print("Running TPB diagonalization...")
             print()
-        
+
         results = sbd.tpb_diag_from_files(
             fcidumpfile=args.fcidump,
             adetfile=args.adetfile,
             sbd_data=config
         )
-        
+
         if rank == 0:
             print("="*70)
             print("Results")
             print("="*70)
             print(f"Device: {sbd.get_device().upper()}")
             print(f"Ground state energy: {results['energy']:.10f} Hartree")
-            
+
             # Output density in same format as C++ version
             # C++ outputs: density[2*i] + density[2*i+1] for each orbital
             density = results['density']
             combined_density = []
             for i in range(len(density)//2):
                 combined_density.append(density[2*i] + density[2*i+1])
-            
+
             print(f"Density: {combined_density}")
             print(f"Carryover determinants: {len(results['carryover_adet'])}")
             print("="*70)
             print("\n✓ Calculation completed successfully!")
             print()
-        
+
         return_code = 0
-    
+
     except FileNotFoundError as e:
         if rank == 0:
             print(f"\n✗ Error: {e}")
@@ -190,19 +205,23 @@ def main():
             print(f"  FCIDUMP: {args.fcidump}")
             print(f"  Alpha dets: {args.adetfile}")
         return_code = 1
-    
+
     except Exception as e:
         if rank == 0:
             print(f"\n✗ Error during calculation: {e}")
             import traceback
             traceback.print_exc()
         return_code = 1
-    
+
     finally:
         # Synchronize GPU and reset internal state
         # Note: Calls cudaDeviceSynchronize() but NOT cudaDeviceReset() to avoid
         # conflicts with CUDA-aware MPI (UCX). Does not call MPI_Finalize() either.
         sbd.finalize()
+
+    if monitor is not None:
+        monitor.stop()
+        monitor.report()
     
     return return_code
 

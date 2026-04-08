@@ -48,6 +48,10 @@ def parse_args():
                    help="Number of uniform random samples (used when --counts is not given)")
     p.add_argument("--device", choices=["auto", "cpu", "gpu"], default="cpu")
 
+    # Profiling
+    p.add_argument("--profile", action="store_true", default=False,
+                   help="Print resource usage summary after completion")
+
     # SQD outer-loop parameters
     p.add_argument("--samples_per_batch", type=int, default=300)
     p.add_argument("--num_batches", type=int, default=3)
@@ -188,6 +192,13 @@ def main():
         device_config=device_config,
     )
 
+    # Optional profiler
+    monitor = None
+    if args.profile:
+        from qiskit_addon_sqd.profiler import ResourceMonitor
+        monitor = ResourceMonitor()
+        monitor.start()
+
     # --- Run SQD loop ---
     result_history = []
 
@@ -245,6 +256,10 @@ def main():
         sbd.finalize()
     except Exception:
         pass
+
+    if monitor is not None:
+        monitor.stop()
+        monitor.report()
 
 
 if __name__ == "__main__":

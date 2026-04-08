@@ -61,39 +61,28 @@ python -c "import sbd; print(sbd.available_backends())"
 # 8. Run tests (submit via LSF)
 cat > test_full.sh << 'JOBEOF'
 #!/bin/bash
-#BSUB -o /u/hfwen/qcsc/sbd/%J.out
-#BSUB -e /u/hfwen/qcsc/sbd/%J.err
-#BSUB -R "span[ptile=8]"
-#BSUB -n 8
+#BSUB -o sbd-%J.out
+#BSUB -e sbd-%J.err
+#BSUB -R "span[ptile=96]"
+#BSUB -n 96
 #BSUB -gpu "num=8:mode=exclusive_process"
-#BSUB -W 10
+#BSUB -W 180
 #BSUB -G grp_qcsc_diag1
 
 source /u/hfwen/qcsc/venv/bin/activate
-export PATH=/u/hfwen/qcsc/bin:/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/compilers/bin:/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/comm_libs/12.9/hpcx/hpcx-2.25.1/ompi/bin:$PATH
-export LD_LIBRARY_PATH=/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/comm_libs/12.9/hpcx/hpcx-2.25.1/ompi/lib:/u/walkup/OpenBLAS-0.3.30/lib:$LD_LIBRARY_PATH
+export PATH=/u/hfwen/qcsc/bin:/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/compilers/bin:/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/comm_libs/13.1/hpcx/hpcx-2.25.1/ompi/bin:$PATH
+export LD_LIBRARY_PATH=/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/comm_libs/13.1/hpcx/hpcx-2.25.1/ompi/lib:/u/walkup/OpenBLAS-0.3.30/lib:$LD_LIBRARY_PATH
 
 cd /u/hfwen/qcsc/sbd/python/examples
 
 echo "=== CPU diag test ==="
-mpirun -np 2 -x OMP_NUM_THREADS=1 python run_sbd_diag.py \
-    --device cpu --fcidump ../../data/h2o/fcidump.txt \
-    --adetfile ../../data/h2o/h2o-1em3-alpha.txt \
-    --adet_comm_size 2 --tolerance 1e-4 --iteration 50
+mpirun -np 1 -x OMP_NUM_THREADS=96 ~/qcsc/bin/helper.sh python run_sbd_diag.py --device cpu --fcidump ../../data/h2o/fcidump.txt  --adetfile ../../data/h2o/h2o-1em4-alpha.txt --adet_comm_size 1 --bdet_comm_size 1 --tolerance 1e-4
 
 echo "=== GPU diag test ==="
-mpirun -np 1 -x OMP_NUM_THREADS=1 python run_sbd_diag.py \
-    --device gpu --fcidump ../../data/h2o/fcidump.txt \
-    --adetfile ../../data/h2o/h2o-1em3-alpha.txt \
-    --tolerance 1e-4 --iteration 50
+mpirun -np 8 -x OMP_NUM_THREADS=12 ~/qcsc/bin/helper.sh python run_sbd_diag.py --device gpu --fcidump ../../data/h2o/fcidump.txt --adetfile ../../data/h2o/h2o-1em5-alpha.txt --adet_comm_size 4 --bdet_comm_size 2 --tolerance 1e-5
 
-echo "=== SQD + SBD (GPU) test ==="
-mpirun -np 1 -x OMP_NUM_THREADS=1 python run_sqd_sbd.py \
-    --fcidump ../../data/h2o/fcidump.txt \
-    --counts count_dict_h2o.json \
-    --device gpu \
-    --samples_per_batch 30 --num_batches 2 --max_iterations 2 \
-    --tolerance 1e-4 --iteration 50
+echo "=== SQD + SBD test ==="
+mpirun -np 8  -x UCX_TLS=^cuda_ipc -x OMP_NUM_THREADS=12 ~/qcsc/bin/helper.sh python run_sqd_sbd.py --fcidump CLUST_0020/fci_dump.txt --counts CLUST_0020/count_dict.json --device gpu --samples_per_batch 1000  --num_batches 1 --max_iterations 5 --adet_comm_size 4 --bdet_comm_size 2  --tolerance 1e-5
 
 echo "=== DONE ==="
 JOBEOF
