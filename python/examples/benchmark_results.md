@@ -15,7 +15,7 @@ Transpiled with optimization_level=3, auto layout.
 - Per-shot cost converges to ~0.3 ms; small-shot runs are dominated by fixed overhead (~2-3s)
 - Date: 2026-04-09, backend: ibm_fez (156 qubits, Heron)
 
-## Classical SBD Runs
+## Classical SQD Runs (SBD solver)
 
 ### Server: Intel Sapphire Rapids + 8×NVIDIA H100
 
