@@ -65,7 +65,8 @@ def parse_args():
     p.add_argument("--iteration", "--max_it", type=int, default=100, dest="max_it",
                    help="Max SBD Davidson iterations per diagonalization")
     p.add_argument("--block", "--max_nb", type=int, default=50, dest="max_nb")
-    p.add_argument("--rdm", "--do_rdm", type=int, default=1, dest="do_rdm")
+    p.add_argument("--rdm", "--do_rdm", type=int, default=0, dest="do_rdm",
+                   help="0=density only (default, sufficient for SQD), 1=full RDM")
     p.add_argument("--shuffle", "--do_shuffle", type=int, default=0, dest="do_shuffle")
     p.add_argument("--carryover_type", type=int, default=1)
     p.add_argument("--carryover_ratio", "--ratio", type=float, default=0.1, dest="ratio")
@@ -93,12 +94,15 @@ def load_counts_as_bitarray(counts_path, num_bits):
     """Convert count_dict.json {bitstring: count} to qiskit BitArray."""
     with open(counts_path) as f:
         counts = json.load(f)
-    rows = []
-    for bs, cnt in counts.items():
-        row = np.array([c == "1" for c in bs], dtype=bool)
-        for _ in range(cnt):
-            rows.append(row)
-    bool_matrix = np.array(rows, dtype=bool)
+    bitstrings = list(counts.keys())
+    repeats = list(counts.values())
+    # Convert strings to 2D bool array via concatenated byte comparison
+    joined = "".join(bitstrings)
+    bool_flat = np.frombuffer(joined.encode(), dtype=np.uint8) == ord("1")
+    bool_matrix = bool_flat.reshape(len(bitstrings), -1)
+    # Repeat rows according to counts
+    if any(c > 1 for c in repeats):
+        bool_matrix = np.repeat(bool_matrix, repeats, axis=0)
     return BitArray.from_bool_array(bool_matrix)
 
 

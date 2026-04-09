@@ -318,14 +318,18 @@ def solve_sci_batch(
 def _ci_strings_to_sbd_dets(
     ci_strings: np.ndarray, norb: int, backend
 ) -> list[list[int]]:
-    """Convert CI strings (integers) to SBD determinant format."""
+    """Convert CI strings (integers) to SBD determinant format.
+
+    Determinants are sorted in canonical order (matching C++ sort_bitarray)
+    which is required by the GPU Correlation kernel (do_rdm=1).
+    """
     bit_length = 64
     dets = []
     for ci_str in ci_strings:
         binary_str = format(int(ci_str), f'0{norb}b')
         det = backend.from_string(binary_str, bit_length, norb)
         dets.append(det)
-    return dets
+    return backend.sort_bitarray(dets)
 
 
 def _sbd_dets_to_ci_strings(

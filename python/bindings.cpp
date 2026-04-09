@@ -137,6 +137,14 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
           py::arg("bit_length"),
           py::arg("total_bit_length"));
 
+    m.def("sort_bitarray",
+          [](std::vector<std::vector<size_t>>& dets) {
+              sbd::sort_bitarray(dets);
+              return dets;
+          },
+          "Sort determinant array in canonical order (required before diag)",
+          py::arg("dets"));
+
     // ========================================================================
     // Main TPB diagonalization function (data structure version)
     // ========================================================================
