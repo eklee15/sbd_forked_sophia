@@ -49,11 +49,11 @@ Resource details:
 | Metric | Aggregation | 10K run | 20K run |
 |--------|-------------|------:|------:|
 | Wall time | — | 739.7s (~12 min) | 1563.1s (~26 min) |
-| CPU cores allocated | sum across ranks | 160 / 160 | 160 / 160 |
+| CPU cores allocated | sum across ranks | 160 | 160 |
 | CPU utilization | sum across ranks | 112% (1% of allocated) | 114% (1% of allocated) |
 | CPU peak RSS | max across ranks | 2.2 GB | 4.3 GB |
-| CPU memory used | sum across ranks on node | 15.1 / 1763.3 GB | 28.9 / 1763.3 GB |
-| GPU memory | max across ranks | 16.0 / 79.6 GB | 41.6 / 79.6 GB |
+| CPU memory used | sum across ranks on node | 15.1 GB | 28.9 GB |
+| GPU memory | max across ranks | 16.0 GB | 41.6 GB |
 | GPU utilization | avg across ranks | 22% | 45% |
 
 At 50K samples_per_batch, the subspace exceeds 80 GB per-GPU memory.
