@@ -42,6 +42,7 @@ faster — the 20K run reaches -103.593 by iteration 2, while the 10K run needs
 |------------------:|-------------:|-------------:|--------:|--------:|---------:|
 | 10,000            |    1,352,569 | -103.5927851 |  739.7s |  16.0 GB |     22% |
 | 20,000            |    3,724,900 | -103.5934994 | 1563.1s |  41.6 GB |     45% |
+| 50,000            |          OOM |            — |       — |  >79.6 GB |       — |
 
 Resource details:
 
@@ -53,14 +54,6 @@ Resource details:
 | GPU memory | 16.0 / 79.6 GB | 41.6 / 79.6 GB |
 | GPU utilization | 22% avg | 45% avg |
 
-### [4Fe-4S] (NORB=36, NELEC=54, MS2=0)
-
-36 spatial orbitals, 54 electrons (27α, 27β), 72 qubits.
-Input: 1M hardware bitstrings from ibm_fez.
-
-| samples_per_batch | Subspace dim | Energy (Ha) | Time | GPU mem | GPU util |
-|------------------:|-------------:|------------:|-----:|--------:|---------:|
-| 300               |        4,356 | -325.8409   | 509s |  1.0 GB |      1% |
-
-Small subspace due to very few particle-number-conserving bitstrings (4 out of 1M).
-GPU resources are underutilized — larger samples_per_batch would improve GPU usage.
+At 50K samples_per_batch, the subspace exceeds 80 GB per-GPU memory.
+Scaling beyond 20K would require more GPUs or larger bdet_comm_size to
+distribute the subspace across more ranks.
