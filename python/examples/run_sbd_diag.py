@@ -170,10 +170,15 @@ def main():
             print("Running TPB diagonalization...")
             print()
 
+        if args.dump_matrix_form_wf:
+            config.dump_matrix_form_wf = args.dump_matrix_form_wf
+
         results = sbd.tpb_diag_from_files(
             fcidumpfile=args.fcidump,
             adetfile=args.adetfile,
-            sbd_data=config
+            sbd_data=config,
+            loadname=args.loadname,
+            savename=args.savename,
         )
 
         if rank == 0:
