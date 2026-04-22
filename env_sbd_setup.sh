@@ -32,3 +32,8 @@ export CXXFLAGS="-I$CONDA_PREFIX/include"
 
 # 4. Retry the install
 #pip install -e . --no-build-isolation
+
+# Force specific backend
+#SBD_BUILD_BACKEND=cpu pip install -e . --no-build-isolation
+#SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation
+#SBD_BUILD_BACKEND=both pip install -e . --no-build-isolation
